@@ -27,6 +27,13 @@ fn main() {
                         b')' => println!("RIGHT_PAREN ) null"),
                         b'{' => println!("LEFT_BRACE {{ null"),
                         b'}' => println!("RIGHT_BRACE }} null"),
+                        b',' => println!("COMMA , null"),
+                        b'.' => println!("DOT . null"),
+                        b'-' => println!("MINUS - null"),
+                        b'+' => println!("PLUS + null"),
+                        b'/' => println!("SLASH / null"),
+                        b'*' => println!("STAR * null"),
+                        b';' => println!("SEMICOLON ; null"),
                         _ => eprintln!("INVALID TOKEN"),
                     }
                 }
