@@ -19,10 +19,14 @@ fn main() {
             });
 
             if !file_contents.is_empty() {
+                // Here we convert the string to iterator of bytes vector since its faster to
+                // iterate than a regular ASCII &str or String.
                 for char in file_contents.trim().as_bytes() {
                     match char {
                         b'(' => println!("LEFT_PAREN ( null"),
                         b')' => println!("RIGHT_PAREN ) null"),
+                        b'{' => println!("LEFT_BRACE {{ null"),
+                        b'}' => println!("RIGHT_BRACE }} null"),
                         _ => eprintln!("INVALID TOKEN"),
                     }
                 }
