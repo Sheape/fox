@@ -98,14 +98,8 @@ impl<'a> Line<'a> {
                 b'/' => Ok((TokenType::SLASH, false)),
                 b'*' => Ok((TokenType::STAR, false)),
                 b';' => Ok((TokenType::SEMICOLON, false)),
-                b'=' => {
-                    if let Some(b'=') = self.peek_at(1) {
-                        self.step_by(1);
-                        Ok((TokenType::EQUAL_EQUAL, false))
-                    } else {
-                        Ok((TokenType::EQUAL, false))
-                    }
-                }
+                b'=' => self.next_token(b'=', TokenType::EQUAL_EQUAL, TokenType::EQUAL),
+                b'!' => self.next_token(b'=', TokenType::BANG_EQUAL, TokenType::BANG),
                 _ => Err(Error::InvalidTokenError {
                     line_number: self.line_number,
                     token: (byte_char as char).to_string(),
@@ -146,6 +140,20 @@ impl<'a> Line<'a> {
 
     fn step_by(&mut self, index: usize) {
         self.current_token_index += index;
+    }
+
+    fn next_token(
+        &mut self,
+        byte_char: u8,
+        token_type_double: TokenType,
+        token_type: TokenType,
+    ) -> Result<(TokenType, bool)> {
+        if self.peek_at(1) == Some(byte_char) {
+            self.step_by(1);
+            Ok((token_type_double, false))
+        } else {
+            Ok((token_type, false))
+        }
     }
 }
 
