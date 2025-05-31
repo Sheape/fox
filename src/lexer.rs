@@ -99,7 +99,7 @@ impl<'a> Line<'a> {
                 b'*' => Ok((TokenType::STAR, false)),
                 b';' => Ok((TokenType::SEMICOLON, false)),
                 b'=' => {
-                    if self.peek_at(1) == b'=' {
+                    if let Some(b'=') = self.peek_at(1) {
                         self.step_by(1);
                         Ok((TokenType::EQUAL_EQUAL, false))
                     } else {
@@ -113,7 +113,7 @@ impl<'a> Line<'a> {
             };
 
             let chars = if starting_index != self.current_token_index {
-                &self.characters[starting_index..self.current_token_index]
+                &self.characters[starting_index..=self.current_token_index]
             } else {
                 slice::from_ref(&self.characters[starting_index])
             };
@@ -136,8 +136,12 @@ impl<'a> Line<'a> {
         self
     }
 
-    fn peek_at(&self, index: usize) -> u8 {
-        self.characters[self.current_token_index + index]
+    fn peek_at(&self, index: usize) -> Option<u8> {
+        if self.current_token_index + index < self.characters.len() {
+            Some(self.characters[self.current_token_index + index])
+        } else {
+            None
+        }
     }
 
     fn step_by(&mut self, index: usize) {

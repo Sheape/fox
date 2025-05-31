@@ -33,7 +33,7 @@ fn main() {
                     Ok(token) => println!("{token}"),
                     Err(err) => {
                         has_error = true;
-                        println!("{err}")
+                        eprintln!("{err}")
                     }
                 });
             }
