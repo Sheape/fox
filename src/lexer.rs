@@ -95,11 +95,19 @@ impl<'a> Line<'a> {
                 b'.' => Ok((TokenType::DOT, false)),
                 b'-' => Ok((TokenType::MINUS, false)),
                 b'+' => Ok((TokenType::PLUS, false)),
-                b'/' => Ok((TokenType::SLASH, false)),
                 b'*' => Ok((TokenType::STAR, false)),
                 b';' => Ok((TokenType::SEMICOLON, false)),
                 b'=' => self.next_token(b'=', TokenType::EQUAL_EQUAL, TokenType::EQUAL),
                 b'!' => self.next_token(b'=', TokenType::BANG_EQUAL, TokenType::BANG),
+                b'<' => self.next_token(b'=', TokenType::LESS_EQUAL, TokenType::LESS),
+                b'>' => self.next_token(b'=', TokenType::GREATER_EQUAL, TokenType::GREATER),
+                b'/' => {
+                    if self.peek_at(1) == Some(b'/') {
+                        break;
+                    } else {
+                        Ok((TokenType::SLASH, false))
+                    }
+                }
                 _ => Err(Error::InvalidTokenError {
                     line_number: self.line_number,
                     token: (byte_char as char).to_string(),

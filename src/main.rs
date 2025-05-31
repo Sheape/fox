@@ -28,7 +28,14 @@ fn main() {
             let mut has_error = false;
 
             for (line_number, line) in file_contents.lines().enumerate() {
-                let current_line = Line::from_string(line, line_number + 1).tokenize();
+                let no_whitespace_line = line
+                    .trim()
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>();
+
+                let current_line =
+                    Line::from_string(&no_whitespace_line, line_number + 1).tokenize();
                 current_line.tokens.iter().for_each(|result| match result {
                     Ok(token) => println!("{token}"),
                     Err(err) => {
