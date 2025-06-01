@@ -125,6 +125,7 @@ impl<'a> Line<'a> {
                         token
                     }
                 }
+                b'1'..b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
                 _ => Err(Error::InvalidTokenError {
                     line_number: self.line_number,
                     token: (byte_char as char).to_string(),
@@ -179,21 +180,58 @@ impl<'a> Line<'a> {
         &mut self,
         identifier_type: TokenType,
     ) -> Result<(TokenType, Option<String>)> {
-        let closing_quotation = self.characters[self.current_token_index + 1..]
-            .iter()
-            .position(|&char| char == b'"');
+        match identifier_type {
+            TokenType::STRING => {
+                let closing_quotation = self.characters[self.current_token_index + 1..]
+                    .iter()
+                    .position(|&char| char == b'"');
 
-        if let Some(i) = closing_quotation {
-            let literal = String::from_utf8_lossy(
-                &self.characters[self.current_token_index + 1..=self.current_token_index + i],
-            )
-            .to_string();
-            self.current_token_index += i + 1;
-            Ok((identifier_type, Some(literal)))
-        } else {
-            Err(Error::UnterminatedStringError {
+                if let Some(i) = closing_quotation {
+                    let literal = String::from_utf8_lossy(
+                        &self.characters
+                            [self.current_token_index + 1..=self.current_token_index + i],
+                    )
+                    .to_string();
+                    self.current_token_index += i + 1;
+                    Ok((identifier_type, Some(literal)))
+                } else {
+                    Err(Error::UnterminatedStringError {
+                        line_number: self.line_number,
+                    })
+                }
+            }
+            TokenType::NUMBER => {
+                let mut valid_float = true;
+                let mut float_end_index: usize = self.current_token_index;
+                let mut floating_point_count: u8 = 0;
+                while valid_float
+                    && floating_point_count < 2
+                    && float_end_index < self.characters.len()
+                {
+                    match &self.characters[float_end_index] {
+                        b'.' => {
+                            floating_point_count += 1;
+                            float_end_index += 1;
+                        }
+                        b'0'..=b'9' => float_end_index += 1,
+                        _ => valid_float = false,
+                    }
+                }
+
+                let num_literal = Some(format_number(
+                    String::from_utf8_lossy(
+                        &self.characters[self.current_token_index..float_end_index],
+                    )
+                    .to_string(),
+                ));
+
+                self.current_token_index = float_end_index - 1;
+
+                Ok((identifier_type, num_literal))
+            }
+            _ => Err(Error::UnterminatedStringError {
                 line_number: self.line_number,
-            })
+            }),
         }
     }
 }
@@ -226,4 +264,20 @@ impl Display for Token<'_> {
             self.literal.as_deref().unwrap_or("null")
         )
     }
+}
+
+fn format_number(number: String) -> String {
+    let splitted_num = number.split('.').collect::<Vec<&str>>();
+
+    if splitted_num.len() == 1 {
+        return format!("{number}.0");
+    }
+
+    let (integer, exponent) = (splitted_num[0], splitted_num[1]);
+
+    if exponent.parse::<u32>() == Ok(0) {
+        return format!("{integer}.0");
+    }
+
+    number
 }
