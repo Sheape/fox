@@ -125,7 +125,7 @@ impl<'a> Line<'a> {
                         token
                     }
                 }
-                b'1'..=b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
+                b'0'..=b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
                 b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                     Ok(self.next_identifier(TokenType::IDENTIFIER).unwrap())
                 }
@@ -243,8 +243,33 @@ impl<'a> Line<'a> {
                     }
                 }
 
+                let identifier_literal = String::from_utf8_lossy(
+                    &self.characters[self.current_token_index..identifier_end_index],
+                )
+                .to_string();
+
                 self.current_token_index = identifier_end_index - 1;
-                Ok((identifier_type, None))
+                let token_type = match identifier_literal.as_str() {
+                    "and" => TokenType::AND,
+                    "class" => TokenType::CLASS,
+                    "else" => TokenType::ELSE,
+                    "false" => TokenType::FALSE,
+                    "for" => TokenType::FOR,
+                    "fun" => TokenType::FUN,
+                    "if" => TokenType::IF,
+                    "nil" => TokenType::NIL,
+                    "or" => TokenType::OR,
+                    "print" => TokenType::PRINT,
+                    "return" => TokenType::RETURN,
+                    "super" => TokenType::SUPER,
+                    "this" => TokenType::THIS,
+                    "true" => TokenType::TRUE,
+                    "var" => TokenType::VAR,
+                    "while" => TokenType::WHILE,
+                    _ => identifier_type,
+                };
+
+                Ok((token_type, None))
             }
             _ => Err(Error::UnterminatedStringError {
                 line_number: self.line_number,
