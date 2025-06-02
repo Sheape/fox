@@ -118,14 +118,17 @@ impl<'a> Line<'a> {
                 }
                 b'"' => {
                     let token = self.next_identifier(TokenType::STRING);
-                    if token.is_err() {
-                        self.tokens.push(Err(token.unwrap_err()));
+                    if let Err(err) = token {
+                        self.tokens.push(Err(err));
                         break;
                     } else {
                         token
                     }
                 }
-                b'1'..b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
+                b'1'..=b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
+                b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                    Ok(self.next_identifier(TokenType::IDENTIFIER).unwrap())
+                }
                 _ => Err(Error::InvalidTokenError {
                     line_number: self.line_number,
                     token: (byte_char as char).to_string(),
@@ -228,6 +231,20 @@ impl<'a> Line<'a> {
                 self.current_token_index = float_end_index - 1;
 
                 Ok((identifier_type, num_literal))
+            }
+            TokenType::IDENTIFIER => {
+                let mut identifier_end_index = self.current_token_index;
+                while self.characters[identifier_end_index].is_ascii_alphanumeric()
+                    || self.characters[identifier_end_index] == b'_'
+                {
+                    identifier_end_index += 1;
+                    if identifier_end_index >= self.characters.len() {
+                        break;
+                    }
+                }
+
+                self.current_token_index = identifier_end_index - 1;
+                Ok((identifier_type, None))
             }
             _ => Err(Error::UnterminatedStringError {
                 line_number: self.line_number,
