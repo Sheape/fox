@@ -3,6 +3,7 @@ use std::fs;
 
 mod error;
 mod lexer;
+mod parser;
 
 pub use error::{Error, Result};
 use lexer::Line;

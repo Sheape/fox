@@ -4,7 +4,7 @@ use crate::{Error, Result};
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     // Single chars
     LEFT_PAREN,
@@ -69,6 +69,14 @@ pub struct Token<'a> {
     pub characters: &'a [u8],
     pub literal: Option<String>,
     pub token_type: TokenType,
+}
+
+impl PartialEq for Token<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.token_type == other.token_type
+            && self.literal == other.literal
+            && self.characters == other.characters
+    }
 }
 
 impl<'a> Line<'a> {
@@ -322,4 +330,77 @@ fn format_number(number: String) -> String {
     }
 
     number
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[cfg(test)]
+    fn create_token(characters: &str, literal: Option<String>, token_type: TokenType) -> Token<'_> {
+        Token {
+            characters: characters.as_bytes(),
+            literal,
+            token_type,
+        }
+    }
+
+    #[cfg(test)]
+    fn from_input_ok(input: &str, line_number: usize) -> Vec<Token<'_>> {
+        Line::from_string(input, line_number)
+            .tokenize()
+            .tokens
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect()
+    }
+
+    #[test]
+    fn test_lex_parenthesis_ok() {
+        let input = "(()";
+        let output_tokens: Vec<Token<'_>> = vec![
+            create_token("(", None, TokenType::LEFT_PAREN),
+            create_token("(", None, TokenType::LEFT_PAREN),
+            create_token(")", None, TokenType::RIGHT_PAREN),
+        ];
+
+        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
+
+        assert_eq!(lexed_input, output_tokens);
+    }
+
+    #[test]
+    fn test_lex_braces_ok() {
+        let input = "{{}}";
+        let output_tokens: Vec<Token<'_>> = vec![
+            create_token("{", None, TokenType::LEFT_BRACE),
+            create_token("{", None, TokenType::LEFT_BRACE),
+            create_token("}", None, TokenType::RIGHT_BRACE),
+            create_token("}", None, TokenType::RIGHT_BRACE),
+        ];
+
+        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
+
+        assert_eq!(lexed_input, output_tokens);
+    }
+
+    #[test]
+    fn test_lex_braces_paren_mixed_ok() {
+        let input = "({*.,+*})";
+        let output_tokens: Vec<Token<'_>> = vec![
+            create_token("(", None, TokenType::LEFT_PAREN),
+            create_token("{", None, TokenType::LEFT_BRACE),
+            create_token("*", None, TokenType::STAR),
+            create_token(".", None, TokenType::DOT),
+            create_token(",", None, TokenType::COMMA),
+            create_token("+", None, TokenType::PLUS),
+            create_token("*", None, TokenType::STAR),
+            create_token("}", None, TokenType::RIGHT_BRACE),
+            create_token(")", None, TokenType::RIGHT_PAREN),
+        ];
+
+        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
+
+        assert_eq!(lexed_input, output_tokens);
+    }
 }
