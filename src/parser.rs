@@ -105,6 +105,53 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&self) -> Result<Box<Expression>> {
+        let mut node = self.parse_comparison()?;
+        loop {
+            match self.get_token() {
+                Some(token)
+                    if matches!(
+                        token.token_type,
+                        TokenType::EQUAL_EQUAL | TokenType::BANG_EQUAL
+                    ) =>
+                {
+                    let _ = self.read_token();
+                    let rhs = self.parse_comparison()?;
+                    node = Box::new(Expression::Binary(node, token, rhs));
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        Ok(node)
+    }
+
+    fn parse_comparison(&self) -> Result<Box<Expression>> {
+        let mut node = self.parse_term()?;
+        loop {
+            match self.get_token() {
+                Some(token)
+                    if matches!(
+                        token.token_type,
+                        TokenType::LESS
+                            | TokenType::LESS_EQUAL
+                            | TokenType::GREATER
+                            | TokenType::GREATER_EQUAL
+                    ) =>
+                {
+                    let _ = self.read_token();
+                    let rhs = self.parse_term()?;
+                    node = Box::new(Expression::Binary(node, token, rhs));
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        Ok(node)
+    }
+
+    fn parse_term(&self) -> Result<Box<Expression>> {
         let mut node = self.parse_factor()?;
         loop {
             match self.get_token() {
