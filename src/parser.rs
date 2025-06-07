@@ -94,7 +94,7 @@ impl<'a> Parser<'a> {
             TokenType::NUMBER | TokenType::LEFT_PAREN => {
                 Some(Statement::Literal(*self.parse_expr().unwrap()))
             }
-            TokenType::TRUE | TokenType::FALSE => {
+            TokenType::TRUE | TokenType::FALSE | TokenType::NIL => {
                 Some(Statement::Literal(Expression::Literal(token)))
             }
             _ => None,
