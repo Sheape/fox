@@ -47,7 +47,11 @@ impl Display for Expression<'_> {
                 )
             }
             Expression::Literal(token) => {
-                write!(f, "{}", String::from_utf8_lossy(token.characters))
+                if token.token_type == TokenType::STRING {
+                    write!(f, "{}", token.literal.as_ref().unwrap())
+                } else {
+                    write!(f, "{}", String::from_utf8_lossy(token.characters))
+                }
             }
             _ => Ok(()),
         }
@@ -91,11 +95,17 @@ impl<'a> Parser<'a> {
         let token = self.tokens.get(self.current_token_index.get()).unwrap();
 
         match token.token_type {
+            TokenType::TRUE
+            | TokenType::FALSE
+            | TokenType::NIL
+            | TokenType::STRING
+            | TokenType::NUMBER
+                if self.tokens.len() == 1 =>
+            {
+                Some(Statement::Literal(Expression::Literal(token)))
+            }
             TokenType::NUMBER | TokenType::LEFT_PAREN => {
                 Some(Statement::Literal(*self.parse_expr().unwrap()))
-            }
-            TokenType::TRUE | TokenType::FALSE | TokenType::NIL => {
-                Some(Statement::Literal(Expression::Literal(token)))
             }
             _ => None,
         }
