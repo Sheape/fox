@@ -49,6 +49,14 @@ impl Display for Expression<'_> {
             Expression::Grouping(expr) => {
                 write!(f, "(group {})", expr)
             }
+            Expression::Unary(prefix, expr) => {
+                write!(
+                    f,
+                    "({} {})",
+                    String::from_utf8_lossy(prefix.characters),
+                    expr
+                )
+            }
             Expression::Literal(token) => match token.token_type {
                 TokenType::STRING | TokenType::NUMBER => {
                     write!(f, "{}", token.literal.as_ref().unwrap())
@@ -106,7 +114,7 @@ impl<'a> Parser<'a> {
             {
                 Some(Statement::Literal(Expression::Literal(token)))
             }
-            TokenType::NUMBER | TokenType::LEFT_PAREN => {
+            TokenType::NUMBER | TokenType::LEFT_PAREN | TokenType::BANG | TokenType::MINUS => {
                 Some(Statement::Literal(*self.parse_expr().unwrap()))
             }
             _ => None,
@@ -184,7 +192,11 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
-            TokenType::NUMBER => {
+            TokenType::BANG | TokenType::MINUS => {
+                let node = self.parse_expr()?;
+                Ok(Box::new(Expression::Unary(current_token, node)))
+            }
+            TokenType::NUMBER | TokenType::TRUE | TokenType::FALSE => {
                 //println!(
                 //    "Successfully returned {} from factor",
                 //    String::from_utf8_lossy(current_token.characters)
