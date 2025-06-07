@@ -63,7 +63,6 @@ impl Display for Expression<'_> {
                 }
                 _ => write!(f, "{}", String::from_utf8_lossy(token.characters)),
             },
-            _ => Ok(()),
         }
     }
 }
@@ -102,83 +101,56 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&self) -> Option<Statement<'_>> {
-        let token = self.tokens.get(self.current_token_index.get()).unwrap();
-
-        match token.token_type {
-            TokenType::TRUE
-            | TokenType::FALSE
-            | TokenType::NIL
-            | TokenType::STRING
-            | TokenType::NUMBER
-                if self.tokens.len() == 1 =>
-            {
-                Some(Statement::Literal(Expression::Literal(token)))
-            }
-            TokenType::NUMBER | TokenType::LEFT_PAREN | TokenType::BANG | TokenType::MINUS => {
-                Some(Statement::Literal(*self.parse_expr().unwrap()))
-            }
-            _ => None,
-        }
+        Some(Statement::Literal(*self.parse_expr().unwrap()))
     }
 
     fn parse_expr(&self) -> Result<Box<Expression>> {
-        //println!(
-        //    "Calling parse_expr at index: {}",
-        //    self.current_token_index.get()
-        //);
-        let node = self.parse_term()?;
-        match self.get_token() {
-            Some(token) if matches!(token.token_type, TokenType::PLUS | TokenType::MINUS) => {
-                let _ = self.read_token();
-                let rhs = self.parse_term()?;
-                //println!(
-                //    "Successfully returned {} from expr",
-                //    String::from_utf8_lossy(token.characters)
-                //);
-
-                //println!("Token at RHS: {}", *rhs);
-                Ok(Box::new(Expression::Binary(node, token, rhs)))
-            }
-            _ => {
-                //println!("OPERATOR IS NOT + -");
-                //println!(
-                //    "Token is {}",
-                //    String::from_utf8_lossy(self.get_token().unwrap().characters)
-                //);
-                Ok(node)
+        let mut node = self.parse_factor()?;
+        loop {
+            match self.get_token() {
+                Some(token) if matches!(token.token_type, TokenType::PLUS | TokenType::MINUS) => {
+                    let _ = self.read_token();
+                    let rhs = self.parse_factor()?;
+                    node = Box::new(Expression::Binary(node, token, rhs));
+                }
+                _ => {
+                    break;
+                }
             }
         }
-    }
-
-    fn parse_term(&self) -> Result<Box<Expression>> {
-        //println!(
-        //    "Calling parse_term at index: {}",
-        //    self.current_token_index.get()
-        //);
-        let node = self.parse_factor()?;
-        match self.get_token() {
-            Some(token) if matches!(token.token_type, TokenType::STAR | TokenType::SLASH) => {
-                let _ = self.read_token();
-                let rhs = self.parse_factor()?;
-                //println!(
-                //    "Successfully returned {} from term",
-                //    String::from_utf8_lossy(token.characters)
-                //);
-                Ok(Box::new(Expression::Binary(node, token, rhs)))
-            }
-            _ => {
-                //println!("OPERATOR IS NOT * /");
-                Ok(node)
-            }
-        }
+        Ok(node)
     }
 
     fn parse_factor(&self) -> Result<Box<Expression>> {
-        //println!(
-        //    "Calling parse_factor at index: {}",
-        //    self.current_token_index.get()
-        //);
-        let current_token = self.read_token().unwrap(); // handle error for ex when its like "2 *"
+        let mut node = self.parse_unary()?;
+        loop {
+            match self.get_token() {
+                Some(token) if matches!(token.token_type, TokenType::STAR | TokenType::SLASH) => {
+                    let _ = self.read_token();
+                    let rhs = self.parse_unary()?;
+                    node = Box::new(Expression::Binary(node, token, rhs))
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        Ok(node)
+    }
+
+    fn parse_unary(&self) -> Result<Box<Expression>> {
+        match self.get_token() {
+            Some(token) if matches!(token.token_type, TokenType::BANG | TokenType::MINUS) => {
+                let _ = self.read_token();
+                let primary = self.parse_unary()?;
+                Ok(Box::new(Expression::Unary(token, primary)))
+            }
+            _ => Ok(self.parse_primary()?),
+        }
+    }
+
+    fn parse_primary(&self) -> Result<Box<Expression>> {
+        let current_token = self.read_token().unwrap();
         match current_token.token_type {
             TokenType::LEFT_PAREN => {
                 let node = self.parse_expr()?;
@@ -192,17 +164,11 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
-            TokenType::BANG | TokenType::MINUS => {
-                let node = self.parse_expr()?;
-                Ok(Box::new(Expression::Unary(current_token, node)))
-            }
-            TokenType::NUMBER | TokenType::TRUE | TokenType::FALSE => {
-                //println!(
-                //    "Successfully returned {} from factor",
-                //    String::from_utf8_lossy(current_token.characters)
-                //);
-                Ok(Box::new(Expression::Literal(current_token)))
-            }
+            TokenType::STRING
+            | TokenType::NUMBER
+            | TokenType::TRUE
+            | TokenType::FALSE
+            | TokenType::NIL => Ok(Box::new(Expression::Literal(current_token))),
             _ => Ok(Box::new(Expression::Literal(current_token))),
         }
     }
