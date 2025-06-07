@@ -69,6 +69,7 @@ pub struct Token<'a> {
     pub characters: &'a [u8],
     pub literal: Option<String>,
     pub token_type: TokenType,
+    pub line_number: usize,
 }
 
 impl PartialEq for Token<'_> {
@@ -88,6 +89,20 @@ impl<'a> Line<'a> {
             line_number,
             current_token_index: 0,
         }
+    }
+
+    pub fn tokenize_from_file(file_contents: &'a str) -> Vec<Token<'a>> {
+        let mut tokens: Vec<Token> = vec![];
+
+        for (line_number, line) in file_contents.lines().enumerate() {
+            let current_line = Line::from_string(line.trim(), line_number + 1).tokenize();
+            current_line
+                .tokens
+                .into_iter()
+                .for_each(|token| tokens.push(token.unwrap()));
+        }
+
+        tokens
     }
 
     pub fn tokenize(mut self) -> Self {
@@ -150,7 +165,8 @@ impl<'a> Line<'a> {
             };
 
             if let Ok(token) = token_type {
-                self.tokens.push(Ok(Token::new(chars, token.1, token.0)));
+                self.tokens
+                    .push(Ok(Token::new(chars, token.1, token.0, self.line_number)));
             } else {
                 self.tokens.push(Err(token_type.unwrap_err()));
             }
@@ -287,11 +303,17 @@ impl<'a> Line<'a> {
 }
 
 impl<'a> Token<'a> {
-    pub fn new(characters: &'a [u8], literal: Option<String>, token_type: TokenType) -> Self {
+    pub fn new(
+        characters: &'a [u8],
+        literal: Option<String>,
+        token_type: TokenType,
+        line_number: usize,
+    ) -> Self {
         Self {
             characters,
             literal,
             token_type,
+            line_number,
         }
     }
 
@@ -300,6 +322,7 @@ impl<'a> Token<'a> {
             token_type: TokenType::EOF,
             characters: "".as_bytes(),
             literal: None,
+            line_number: 9999,
         }
     }
 }
@@ -337,11 +360,17 @@ mod test {
     use super::*;
 
     #[cfg(test)]
-    fn create_token(characters: &str, literal: Option<String>, token_type: TokenType) -> Token<'_> {
+    fn create_token(
+        characters: &str,
+        literal: Option<String>,
+        token_type: TokenType,
+        line_number: usize,
+    ) -> Token<'_> {
         Token {
             characters: characters.as_bytes(),
             literal,
             token_type,
+            line_number,
         }
     }
 
@@ -359,9 +388,9 @@ mod test {
     fn test_lex_parenthesis_ok() {
         let input = "(()";
         let output_tokens: Vec<Token<'_>> = vec![
-            create_token("(", None, TokenType::LEFT_PAREN),
-            create_token("(", None, TokenType::LEFT_PAREN),
-            create_token(")", None, TokenType::RIGHT_PAREN),
+            create_token("(", None, TokenType::LEFT_PAREN, 1),
+            create_token("(", None, TokenType::LEFT_PAREN, 1),
+            create_token(")", None, TokenType::RIGHT_PAREN, 1),
         ];
 
         let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
@@ -373,10 +402,10 @@ mod test {
     fn test_lex_braces_ok() {
         let input = "{{}}";
         let output_tokens: Vec<Token<'_>> = vec![
-            create_token("{", None, TokenType::LEFT_BRACE),
-            create_token("{", None, TokenType::LEFT_BRACE),
-            create_token("}", None, TokenType::RIGHT_BRACE),
-            create_token("}", None, TokenType::RIGHT_BRACE),
+            create_token("{", None, TokenType::LEFT_BRACE, 1),
+            create_token("{", None, TokenType::LEFT_BRACE, 1),
+            create_token("}", None, TokenType::RIGHT_BRACE, 1),
+            create_token("}", None, TokenType::RIGHT_BRACE, 1),
         ];
 
         let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
@@ -388,15 +417,15 @@ mod test {
     fn test_lex_braces_paren_mixed_ok() {
         let input = "({*.,+*})";
         let output_tokens: Vec<Token<'_>> = vec![
-            create_token("(", None, TokenType::LEFT_PAREN),
-            create_token("{", None, TokenType::LEFT_BRACE),
-            create_token("*", None, TokenType::STAR),
-            create_token(".", None, TokenType::DOT),
-            create_token(",", None, TokenType::COMMA),
-            create_token("+", None, TokenType::PLUS),
-            create_token("*", None, TokenType::STAR),
-            create_token("}", None, TokenType::RIGHT_BRACE),
-            create_token(")", None, TokenType::RIGHT_PAREN),
+            create_token("(", None, TokenType::LEFT_PAREN, 1),
+            create_token("{", None, TokenType::LEFT_BRACE, 1),
+            create_token("*", None, TokenType::STAR, 1),
+            create_token(".", None, TokenType::DOT, 1),
+            create_token(",", None, TokenType::COMMA, 1),
+            create_token("+", None, TokenType::PLUS, 1),
+            create_token("*", None, TokenType::STAR, 1),
+            create_token("}", None, TokenType::RIGHT_BRACE, 1),
+            create_token(")", None, TokenType::RIGHT_PAREN, 1),
         ];
 
         let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
