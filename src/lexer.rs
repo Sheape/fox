@@ -348,11 +348,12 @@ fn format_number(number: String) -> String {
 
     let (integer, exponent) = (splitted_num[0], splitted_num[1]);
 
-    if exponent.parse::<u32>() == Ok(0) {
-        return format!("{integer}.0");
+    let exp = exponent.parse::<u32>();
+    if exp == Ok(0) {
+        format!("{integer}.0")
+    } else {
+        format!("{integer}.{}", exp.unwrap())
     }
-
-    number
 }
 
 #[cfg(test)]
