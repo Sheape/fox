@@ -100,8 +100,9 @@ impl<'a> Parser<'a> {
         None
     }
 
-    pub fn parse(&self) -> Option<Statement<'_>> {
-        Some(Statement::Literal(*self.parse_expr().unwrap()))
+    pub fn parse(&self) -> Result<Statement<'_>> {
+        self.parse_expr()
+            .map(|expr| Ok(Statement::Literal(*expr)))?
     }
 
     fn parse_expr(&self) -> Result<Box<Expression>> {
@@ -216,7 +217,10 @@ impl<'a> Parser<'a> {
             | TokenType::TRUE
             | TokenType::FALSE
             | TokenType::NIL => Ok(Box::new(Expression::Literal(current_token))),
-            _ => Ok(Box::new(Expression::Literal(current_token))),
+            _ => Err(Error::SyntaxError {
+                line_number: current_token.line_number,
+                token: String::from_utf8_lossy(current_token.characters).to_string(),
+            }),
         }
     }
 

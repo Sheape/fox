@@ -17,7 +17,7 @@ impl std::fmt::Display for Error {
                 format!("[line {line_number}] Error: Unterminated string.")
             }
             Error::SyntaxError { line_number, token } => {
-                format!("line {line_number}] Error at '{token}': Expect expression")
+                format!("[line {line_number}] Error at '{token}': Expect expression")
             }
         };
 

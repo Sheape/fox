@@ -91,15 +91,15 @@ impl<'a> Line<'a> {
         }
     }
 
-    pub fn tokenize_from_file(file_contents: &'a str) -> Vec<Token<'a>> {
-        let mut tokens: Vec<Token> = vec![];
+    pub fn tokenize_from_file(file_contents: &'a str) -> Vec<Result<Token<'a>>> {
+        let mut tokens: Vec<Result<Token>> = vec![];
 
         for (line_number, line) in file_contents.lines().enumerate() {
             let current_line = Line::from_string(line.trim(), line_number + 1).tokenize();
             current_line
                 .tokens
                 .into_iter()
-                .for_each(|token| tokens.push(token.unwrap()));
+                .for_each(|token| tokens.push(token));
         }
 
         tokens

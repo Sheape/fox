@@ -53,10 +53,25 @@ fn main() {
             });
 
             let tokens = Line::tokenize_from_file(&file_contents);
-            let parser = Parser::from_tokens(tokens);
-            let statement = parser.parse().unwrap();
+            let ok_tokens: Vec<Token> = tokens
+                .into_iter()
+                .map(|token| match token {
+                    Ok(token) => token,
+                    Err(err) => {
+                        eprintln!("{err}");
+                        std::process::exit(65);
+                    }
+                })
+                .collect();
+            let parser = Parser::from_tokens(ok_tokens);
+            match parser.parse() {
+                Ok(statement) => println!("{}", &statement),
+                Err(err) => {
+                    eprintln!("{err}");
+                    std::process::exit(65)
+                }
+            }
             //dbg!(&statement);
-            println!("{}", &statement);
         }
         _ => {
             eprintln!("Unknown command: {}", command);
