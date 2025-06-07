@@ -4,6 +4,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     InvalidTokenError { line_number: usize, token: String },
     UnterminatedStringError { line_number: usize },
+    SyntaxError { line_number: usize, token: String },
 }
 
 impl std::fmt::Display for Error {
@@ -14,6 +15,9 @@ impl std::fmt::Display for Error {
             }
             Error::UnterminatedStringError { line_number } => {
                 format!("[line {line_number}] Error: Unterminated string.")
+            }
+            Error::SyntaxError { line_number, token } => {
+                format!("line {line_number}] Error at '{token}': Expect expression")
             }
         };
 
