@@ -46,13 +46,12 @@ impl Display for Expression<'_> {
                     second
                 )
             }
-            Expression::Literal(token) => {
-                if token.token_type == TokenType::STRING {
+            Expression::Literal(token) => match token.token_type {
+                TokenType::STRING | TokenType::NUMBER => {
                     write!(f, "{}", token.literal.as_ref().unwrap())
-                } else {
-                    write!(f, "{}", String::from_utf8_lossy(token.characters))
                 }
-            }
+                _ => write!(f, "{}", String::from_utf8_lossy(token.characters)),
+            },
             _ => Ok(()),
         }
     }
