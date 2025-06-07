@@ -46,6 +46,9 @@ impl Display for Expression<'_> {
                     second
                 )
             }
+            Expression::Grouping(expr) => {
+                write!(f, "(group {})", expr)
+            }
             Expression::Literal(token) => match token.token_type {
                 TokenType::STRING | TokenType::NUMBER => {
                     write!(f, "{}", token.literal.as_ref().unwrap())
@@ -170,13 +173,10 @@ impl<'a> Parser<'a> {
         let current_token = self.read_token().unwrap(); // handle error for ex when its like "2 *"
         match current_token.token_type {
             TokenType::LEFT_PAREN => {
-                let _ = self.read_token();
                 let node = self.parse_expr()?;
-                if self
-                    .peek()
-                    .is_some_and(|token| token.token_type == TokenType::RIGHT_PAREN)
-                {
-                    Ok(node)
+                let closing_paren = self.read_token();
+                if closing_paren.is_some_and(|token| token.token_type == TokenType::RIGHT_PAREN) {
+                    Ok(Box::new(Expression::Grouping(node)))
                 } else {
                     Err(Error::SyntaxError {
                         line_number: current_token.line_number,
