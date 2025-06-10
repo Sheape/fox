@@ -23,7 +23,6 @@ pub struct Parser<'a> {
     pub tokens: Vec<Token<'a>>,
     pub statements: Vec<Statement<'a>>,
     current_token_index: Cell<usize>,
-    next_token_index: Cell<usize>,
 }
 
 impl Display for Statement<'_> {
@@ -73,12 +72,7 @@ impl<'a> Parser<'a> {
             tokens,
             statements: vec![],
             current_token_index: Cell::new(0),
-            next_token_index: Cell::new(1),
         }
-    }
-
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.next_token_index.get())
     }
 
     fn get_token(&self) -> Option<&Token> {
@@ -86,15 +80,13 @@ impl<'a> Parser<'a> {
     }
 
     fn read_token(&self) -> Option<&Token> {
-        let next_token_idx = self.next_token_index.get();
         let current_token_idx = self.current_token_index.get();
         //print!("Current token index: {} | ", current_token_idx);
         //print!("Next token index: {} | ", next_token_idx);
         if current_token_idx < self.tokens.len() {
             let current_token = self.tokens.get(current_token_idx);
             //println!("Current reading: {}", &current_token.unwrap());
-            self.current_token_index.set(next_token_idx);
-            self.next_token_index.set(next_token_idx + 1);
+            self.current_token_index.set(current_token_idx + 1);
             return current_token;
         }
         None
@@ -222,9 +214,5 @@ impl<'a> Parser<'a> {
                 token: String::from_utf8_lossy(current_token.characters).to_string(),
             }),
         }
-    }
-
-    pub fn collect(self) -> Vec<Statement<'a>> {
-        self.statements
     }
 }

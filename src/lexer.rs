@@ -131,11 +131,7 @@ impl<'a> Line<'a> {
                         Ok((TokenType::SLASH, None))
                     }
                 }
-                b' ' => {
-                    self.step_by(1);
-                    continue;
-                }
-                b'\t' => {
+                b' ' | b'\t' => {
                     self.step_by(1);
                     continue;
                 }
