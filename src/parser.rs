@@ -1,7 +1,7 @@
 use std::{cell::Cell, fmt::Display};
 
 use crate::{
-    lexer::{Token, TokenType},
+    lexer::{Lexer, Token, TokenType},
     Error, Result,
 };
 
@@ -12,15 +12,15 @@ pub enum Statement<'a> {
 
 #[derive(Debug)]
 pub enum Expression<'a> {
-    Binary(Box<Expression<'a>>, &'a Token<'a>, Box<Expression<'a>>),
-    Unary(&'a Token<'a>, Box<Expression<'a>>),
-    Literal(&'a Token<'a>),
+    Binary(Box<Expression<'a>>, &'a Token, Box<Expression<'a>>),
+    Unary(&'a Token, Box<Expression<'a>>),
+    Literal(&'a Token),
     Grouping(Box<Expression<'a>>),
 }
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    pub tokens: Vec<Token<'a>>,
+    pub tokens: Vec<Token>,
     pub statements: Vec<Statement<'a>>,
     current_token_index: Cell<usize>,
 }
@@ -28,7 +28,7 @@ pub struct Parser<'a> {
 impl Display for Statement<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Literal(expr) => write!(f, "{}", expr),
+            Statement::Literal(expr) => write!(f, "{expr}"),
         }
     }
 }
@@ -37,55 +37,43 @@ impl Display for Expression<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expression::Binary(first, operator, second) => {
-                write!(
-                    f,
-                    "({} {} {})",
-                    String::from_utf8_lossy(operator.characters),
-                    first,
-                    second
-                )
+                write!(f, "({} {} {})", operator.token_type, first, second)
             }
             Expression::Grouping(expr) => {
                 write!(f, "(group {})", expr)
             }
             Expression::Unary(prefix, expr) => {
-                write!(
-                    f,
-                    "({} {})",
-                    String::from_utf8_lossy(prefix.characters),
-                    expr
-                )
+                write!(f, "({} {})", prefix.token_type, expr)
             }
-            Expression::Literal(token) => match token.token_type {
-                TokenType::STRING | TokenType::NUMBER => {
-                    write!(f, "{}", token.literal.as_ref().unwrap())
-                }
-                _ => write!(f, "{}", String::from_utf8_lossy(token.characters)),
-            },
+            Expression::Literal(token) => write!(f, "{}", token.token_type),
         }
     }
 }
 
-impl<'a> Parser<'a> {
-    pub fn from_tokens(tokens: Vec<Token<'a>>) -> Self {
+impl From<Lexer<'_>> for Parser<'_> {
+    fn from(value: Lexer<'_>) -> Self {
+        let lexed_tokens: Vec<Token> = value
+            .tokens
+            .into_iter()
+            .map(|result| result.unwrap())
+            .collect();
         Self {
-            tokens,
+            tokens: lexed_tokens,
             statements: vec![],
             current_token_index: Cell::new(0),
         }
     }
+}
 
+impl Parser<'_> {
     fn get_token(&self) -> Option<&Token> {
         self.tokens.get(self.current_token_index.get())
     }
 
     fn read_token(&self) -> Option<&Token> {
         let current_token_idx = self.current_token_index.get();
-        //print!("Current token index: {} | ", current_token_idx);
-        //print!("Next token index: {} | ", next_token_idx);
         if current_token_idx < self.tokens.len() {
             let current_token = self.tokens.get(current_token_idx);
-            //println!("Current reading: {}", &current_token.unwrap());
             self.current_token_index.set(current_token_idx + 1);
             return current_token;
         }
@@ -200,18 +188,19 @@ impl<'a> Parser<'a> {
                 } else {
                     Err(Error::SyntaxError {
                         line_number: current_token.line_number,
-                        token: String::from_utf8_lossy(current_token.characters).to_string(),
+                        token: format!("{}", current_token.token_type),
                     })
                 }
             }
-            TokenType::STRING
-            | TokenType::NUMBER
+            TokenType::STRING(_)
+            | TokenType::NUMBER_FLOAT(_, _)
+            | TokenType::NUMBER_INT(_)
             | TokenType::TRUE
             | TokenType::FALSE
             | TokenType::NIL => Ok(Box::new(Expression::Literal(current_token))),
             _ => Err(Error::SyntaxError {
                 line_number: current_token.line_number,
-                token: String::from_utf8_lossy(current_token.characters).to_string(),
+                token: format!("{}", current_token.token_type),
             }),
         }
     }
