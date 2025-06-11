@@ -1,4 +1,4 @@
-use std::{fmt::Display, slice};
+use std::{char, fmt::Display};
 
 use crate::{Error, Result};
 
@@ -30,9 +30,10 @@ pub enum TokenType {
     LESS_EQUAL,
 
     // Literals
+    // TODO: Optimize to use &str instead of String
     IDENTIFIER(String),
     STRING(String),
-    NUMBER_FLOAT(f64),
+    NUMBER_FLOAT(String, f64),
     NUMBER_INT(u64),
 
     // Reserved Keywords
@@ -59,395 +60,341 @@ pub enum TokenType {
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    pub tokens: Vec<Result<Token<'a>>>,
-    pub characters: Vec<&'a [u8]>,
+    pub tokens: Vec<Result<Token>>,
+    input: Vec<&'a [u8]>,
+    line: &'a [u8],
     line_number: usize,
     current_char_index: usize,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Token<'a> {
+pub struct Token {
     pub token_type: TokenType,
     pub line_number: usize,
     pub column_number: usize,
 }
 
-impl<'a> Lexer<'a> {
+impl Lexer<'_> {
+    pub fn tokenize(mut self) -> Self {
+        let input = std::mem::take(&mut self.input);
+        for line in input {
+            self.line = line;
+            self.tokenize_line(line);
+        }
+
+        self
+    }
+
+    pub fn print(&self) -> bool {
+        let mut has_error = false;
+        self.tokens.iter().for_each(|result| match result {
+            Ok(token) => println!("{token}"),
+            Err(err) => {
+                eprintln!("{err}");
+                has_error = true
+            }
+        });
+
+        println!("{}", Token::from_eof());
+
+        has_error
+    }
+
+    fn tokenize_line(&mut self, line: &[u8]) {
+        while self.current_char_index < line.len() {
+            let token_type: Result<TokenType> = match line[self.current_char_index] {
+                b'(' => Ok(TokenType::LEFT_PAREN),
+                b')' => Ok(TokenType::RIGHT_PAREN),
+                b'{' => Ok(TokenType::LEFT_BRACE),
+                b'}' => Ok(TokenType::RIGHT_BRACE),
+                b',' => Ok(TokenType::COMMA),
+                b'.' => Ok(TokenType::DOT),
+                b'-' => Ok(TokenType::MINUS),
+                b'+' => Ok(TokenType::PLUS),
+                b'*' => Ok(TokenType::STAR),
+                b';' => Ok(TokenType::SEMICOLON),
+                b'=' => Ok(self.read_double(TokenType::EQUAL, TokenType::EQUAL_EQUAL)),
+                b'!' => Ok(self.read_double(TokenType::BANG, TokenType::BANG_EQUAL)),
+                b'<' => Ok(self.read_double(TokenType::LESS, TokenType::LESS_EQUAL)),
+                b'>' => Ok(self.read_double(TokenType::GREATER, TokenType::GREATER_EQUAL)),
+                b'/' => {
+                    if self.peek() == Some(b'/') {
+                        break;
+                    } else {
+                        Ok(TokenType::SLASH)
+                    }
+                }
+                b'\t' | b' ' => {
+                    self.read_char();
+                    continue;
+                }
+                b'"' => self.read_string(),
+                b'0'..=b'9' => self.read_number(),
+                b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                    let identifier = self.read_identifier();
+                    match identifier.as_str() {
+                        "and" => Ok(TokenType::AND),
+                        "class" => Ok(TokenType::CLASS),
+                        "if" => Ok(TokenType::IF),
+                        "else" => Ok(TokenType::ELSE),
+                        "false" => Ok(TokenType::FALSE),
+                        "for" => Ok(TokenType::FOR),
+                        "fun" => Ok(TokenType::FUN),
+                        "nil" => Ok(TokenType::NIL),
+                        "or" => Ok(TokenType::OR),
+                        "print" => Ok(TokenType::PRINT),
+                        "return" => Ok(TokenType::RETURN),
+                        "super" => Ok(TokenType::SUPER),
+                        "this" => Ok(TokenType::THIS),
+                        "true" => Ok(TokenType::TRUE),
+                        "var" => Ok(TokenType::VAR),
+                        "while" => Ok(TokenType::WHILE),
+                        _ => Ok(TokenType::IDENTIFIER(identifier)),
+                    }
+                }
+                _ => Err(Error::InvalidTokenError {
+                    line_number: self.line_number,
+                    token: (line[self.current_char_index] as char).to_string(),
+                }),
+            };
+
+            self.tokens.push(token_type.map(|tok_type| Token {
+                token_type: tok_type,
+                column_number: self.current_char_index,
+                line_number: self.line_number,
+            }));
+
+            self.read_char();
+        }
+
+        self.read_line();
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.line.get(self.current_char_index + 1).copied()
+    }
+
     fn read_line(&mut self) {
-        self.current_token_index = 0;
+        self.current_char_index = 0;
         self.line_number += 1;
     }
 
-    fn peek(&self) -> Option<&&'a [u8]> {
-        self.characters.get(self.current_token_index + 1)
+    fn read_char(&mut self) {
+        self.current_char_index += 1;
     }
 
-    fn read_char(&mut self) {
-        if self.peek().is_some() {
-            self.current_token_index += 1;
+    fn read_double(
+        &mut self,
+        single_token_type: TokenType,
+        double_token_type: TokenType,
+    ) -> TokenType {
+        if self.peek() == Some(b'=') {
+            self.read_char();
+            double_token_type
+        } else {
+            single_token_type
         }
     }
 
-    fn get_current_line(&self) -> Option<&&[u8]> {
-        self.characters.get(self.line_number)
+    fn read_string(&mut self) -> Result<TokenType> {
+        let starting_index = self.current_char_index;
+        while let Some(char) = self.peek() {
+            self.read_char();
+            if char == b'"' {
+                return Ok(TokenType::STRING(
+                    String::from_utf8_lossy(
+                        &self.line[starting_index + 1..self.current_char_index],
+                    )
+                    .into_owned(),
+                ));
+            }
+        }
+
+        Err(Error::UnterminatedStringError {
+            line_number: self.line_number,
+        })
     }
 
-    pub fn tokenize_line(&mut self, line: &&[u8]) {
-        while self.current_char_index < (*line).len() {
-            let static_tokens: Option<TokenType> = match line[self.current_char_index] {
-                b'\t' | b' ' => Some(TokenType::EOF),
-                _ => None,
-            };
+    fn read_identifier(&mut self) -> String {
+        let starting_index = self.current_char_index;
+        while let Some(char) = self.peek() {
+            if !(char.is_ascii_alphanumeric() || char == b'_') {
+                break;
+            }
+            self.read_char();
+        }
+
+        String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index]).into_owned()
+    }
+
+    fn read_number(&mut self) -> Result<TokenType> {
+        let starting_index = self.current_char_index;
+        let mut floating_point_count: usize = 0;
+        while let Some(current_char) = self.peek() {
+            match current_char {
+                b'0'..=b'9' => self.read_char(),
+                b'.' => {
+                    floating_point_count += 1;
+                    self.read_char();
+                }
+                _ => break,
+            }
+        }
+
+        match floating_point_count {
+            0 => Ok(TokenType::NUMBER_INT(
+                String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index])
+                    .parse::<u64>()
+                    .unwrap(),
+            )),
+            1 => {
+                let float_literal =
+                    String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index])
+                        .into_owned();
+                // TODO: Maybe there's a way to avoid clone() here, just maybe.
+                Ok(TokenType::NUMBER_FLOAT(
+                    float_literal.clone(),
+                    float_literal.parse::<f64>().unwrap(),
+                ))
+            }
+            _ => Err(Error::MultipleFloatingPointError {
+                line_number: self.line_number,
+            }),
         }
     }
 }
 
-//impl<'a> Line<'a> {
-//    pub fn from_string(line_string: &'a str, line_number: usize) -> Self {
-//        let characters = line_string.as_bytes();
-//        Self {
-//            tokens: Vec::with_capacity(characters.len()),
-//            characters,
-//            line_number,
-//            current_token_index: 0,
-//        }
-//    }
-//
-//    pub fn tokenize_from_file(file_contents: &'a str) -> Vec<Result<Token<'a>>> {
-//        let mut tokens: Vec<Result<Token>> = vec![];
-//
-//        for (line_number, line) in file_contents.lines().enumerate() {
-//            let current_line = Line::from_string(line.trim(), line_number + 1).tokenize();
-//            current_line
-//                .tokens
-//                .into_iter()
-//                .for_each(|token| tokens.push(token));
-//        }
-//
-//        tokens
-//    }
-//
-//    pub fn tokenize(mut self) -> Self {
-//        while self.current_token_index < self.characters.len() {
-//            let starting_index = self.current_token_index;
-//            let byte_char = self.characters[self.current_token_index];
-//            let token_type: Result<(TokenType, Option<String>)> = match byte_char {
-//                b'(' => Ok((TokenType::LEFT_PAREN, None)),
-//                b')' => Ok((TokenType::RIGHT_PAREN, None)),
-//                b'{' => Ok((TokenType::LEFT_BRACE, None)),
-//                b'}' => Ok((TokenType::RIGHT_BRACE, None)),
-//                b',' => Ok((TokenType::COMMA, None)),
-//                b'.' => Ok((TokenType::DOT, None)),
-//                b'-' => Ok((TokenType::MINUS, None)),
-//                b'+' => Ok((TokenType::PLUS, None)),
-//                b'*' => Ok((TokenType::STAR, None)),
-//                b';' => Ok((TokenType::SEMICOLON, None)),
-//                b'=' => self.next_token(b'=', TokenType::EQUAL_EQUAL, TokenType::EQUAL),
-//                b'!' => self.next_token(b'=', TokenType::BANG_EQUAL, TokenType::BANG),
-//                b'<' => self.next_token(b'=', TokenType::LESS_EQUAL, TokenType::LESS),
-//                b'>' => self.next_token(b'=', TokenType::GREATER_EQUAL, TokenType::GREATER),
-//                b'/' => {
-//                    if self.peek_at(1) == Some(b'/') {
-//                        break;
-//                    } else {
-//                        Ok((TokenType::SLASH, None))
-//                    }
-//                }
-//                b' ' | b'\t' => {
-//                    self.step_by(1);
-//                    continue;
-//                }
-//                b'"' => {
-//                    let token = self.next_identifier(TokenType::STRING);
-//                    if let Err(err) = token {
-//                        self.tokens.push(Err(err));
-//                        break;
-//                    } else {
-//                        token
-//                    }
-//                }
-//                b'0'..=b'9' => Ok(self.next_identifier(TokenType::NUMBER).unwrap()),
-//                b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-//                    Ok(self.next_identifier(TokenType::IDENTIFIER).unwrap())
-//                }
-//                _ => Err(Error::InvalidTokenError {
-//                    line_number: self.line_number,
-//                    token: (byte_char as char).to_string(),
-//                }),
-//            };
-//
-//            let chars = if starting_index != self.current_token_index {
-//                &self.characters[starting_index..=self.current_token_index]
-//            } else {
-//                slice::from_ref(&self.characters[starting_index])
-//            };
-//
-//            if let Ok(token) = token_type {
-//                self.tokens
-//                    .push(Ok(Token::new(chars, token.1, token.0, self.line_number)));
-//            } else {
-//                self.tokens.push(Err(token_type.unwrap_err()));
-//            }
-//
-//            self.step_by(1);
-//        }
-//
-//        self
-//    }
-//
-//    fn peek_at(&self, index: usize) -> Option<u8> {
-//        if self.current_token_index + index < self.characters.len() {
-//            Some(self.characters[self.current_token_index + index])
-//        } else {
-//            None
-//        }
-//    }
-//
-//    fn step_by(&mut self, index: usize) {
-//        self.current_token_index += index;
-//    }
-//
-//    fn next_token(
-//        &mut self,
-//        byte_char: u8,
-//        token_type_double: TokenType,
-//        token_type: TokenType,
-//    ) -> Result<(TokenType, Option<String>)> {
-//        if self.peek_at(1) == Some(byte_char) {
-//            self.step_by(1);
-//            Ok((token_type_double, None))
-//        } else {
-//            Ok((token_type, None))
-//        }
-//    }
-//
-//    fn next_identifier(
-//        &mut self,
-//        identifier_type: TokenType,
-//    ) -> Result<(TokenType, Option<String>)> {
-//        match identifier_type {
-//            TokenType::STRING => {
-//                let closing_quotation = self.characters[self.current_token_index + 1..]
-//                    .iter()
-//                    .position(|&char| char == b'"');
-//
-//                if let Some(i) = closing_quotation {
-//                    let literal = String::from_utf8_lossy(
-//                        &self.characters
-//                            [self.current_token_index + 1..=self.current_token_index + i],
-//                    )
-//                    .to_string();
-//                    self.current_token_index += i + 1;
-//                    Ok((identifier_type, Some(literal)))
-//                } else {
-//                    Err(Error::UnterminatedStringError {
-//                        line_number: self.line_number,
-//                    })
-//                }
-//            }
-//            TokenType::NUMBER => {
-//                let mut valid_float = true;
-//                let mut float_end_index: usize = self.current_token_index;
-//                let mut floating_point_count: u8 = 0;
-//                while valid_float
-//                    && floating_point_count < 2
-//                    && float_end_index < self.characters.len()
-//                {
-//                    match &self.characters[float_end_index] {
-//                        b'.' => {
-//                            floating_point_count += 1;
-//                            float_end_index += 1;
-//                        }
-//                        b'0'..=b'9' => float_end_index += 1,
-//                        _ => valid_float = false,
-//                    }
-//                }
-//
-//                let num_literal = Some(format_number(
-//                    String::from_utf8_lossy(
-//                        &self.characters[self.current_token_index..float_end_index],
-//                    )
-//                    .to_string(),
-//                ));
-//
-//                self.current_token_index = float_end_index - 1;
-//
-//                Ok((identifier_type, num_literal))
-//            }
-//            TokenType::IDENTIFIER => {
-//                let mut identifier_end_index = self.current_token_index;
-//                while self.characters[identifier_end_index].is_ascii_alphanumeric()
-//                    || self.characters[identifier_end_index] == b'_'
-//                {
-//                    identifier_end_index += 1;
-//                    if identifier_end_index >= self.characters.len() {
-//                        break;
-//                    }
-//                }
-//
-//                let identifier_literal = String::from_utf8_lossy(
-//                    &self.characters[self.current_token_index..identifier_end_index],
-//                )
-//                .to_string();
-//
-//                self.current_token_index = identifier_end_index - 1;
-//                let token_type = match identifier_literal.as_str() {
-//                    "and" => TokenType::AND,
-//                    "class" => TokenType::CLASS,
-//                    "else" => TokenType::ELSE,
-//                    "false" => TokenType::FALSE,
-//                    "for" => TokenType::FOR,
-//                    "fun" => TokenType::FUN,
-//                    "if" => TokenType::IF,
-//                    "nil" => TokenType::NIL,
-//                    "or" => TokenType::OR,
-//                    "print" => TokenType::PRINT,
-//                    "return" => TokenType::RETURN,
-//                    "super" => TokenType::SUPER,
-//                    "this" => TokenType::THIS,
-//                    "true" => TokenType::TRUE,
-//                    "var" => TokenType::VAR,
-//                    "while" => TokenType::WHILE,
-//                    _ => identifier_type,
-//                };
-//
-//                Ok((token_type, None))
-//            }
-//            _ => Err(Error::UnterminatedStringError {
-//                line_number: self.line_number,
-//            }),
-//        }
-//    }
-//}
-//
-//impl<'a> Token<'a> {
-//    pub fn new(
-//        characters: &'a [u8],
-//        literal: Option<String>,
-//        token_type: TokenType,
-//        line_number: usize,
-//    ) -> Self {
-//        Self {
-//            characters,
-//            literal,
-//            token_type,
-//            line_number,
-//        }
-//    }
-//
-//    pub fn from_eof() -> Self {
-//        Self {
-//            token_type: TokenType::EOF,
-//            characters: "".as_bytes(),
-//            literal: None,
-//            line_number: 9999,
-//        }
-//    }
-//}
-//
-//impl Display for Token<'_> {
-//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//        write!(
-//            f,
-//            "{:?} {} {}",
-//            self.token_type,
-//            String::from_utf8_lossy(self.characters),
-//            self.literal.as_deref().unwrap_or("null")
-//        )
-//    }
-//}
-//
-//fn format_number(number: String) -> String {
-//    let splitted_num = number.split('.').collect::<Vec<&str>>();
-//
-//    if splitted_num.len() == 1 {
-//        return format!("{number}.0");
-//    }
-//
-//    let (integer, exponent) = (splitted_num[0], splitted_num[1]);
-//
-//    if exponent.parse::<u32>() == Ok(0) {
-//        format!("{integer}.0")
-//    } else {
-//        format!("{}", number.parse::<f64>().unwrap())
-//    }
-//}
-//
-//#[cfg(test)]
-//mod test {
-//    use super::*;
-//
-//    #[cfg(test)]
-//    fn create_token(
-//        characters: &str,
-//        literal: Option<String>,
-//        token_type: TokenType,
-//        line_number: usize,
-//    ) -> Token<'_> {
-//        Token {
-//            characters: characters.as_bytes(),
-//            literal,
-//            token_type,
-//            line_number,
-//        }
-//    }
-//
-//    #[cfg(test)]
-//    fn from_input_ok(input: &str, line_number: usize) -> Vec<Token<'_>> {
-//        Line::from_string(input, line_number)
-//            .tokenize()
-//            .tokens
-//            .into_iter()
-//            .filter_map(Result::ok)
-//            .collect()
-//    }
-//
-//    #[test]
-//    fn test_lex_parenthesis_ok() {
-//        let input = "(()";
-//        let output_tokens: Vec<Token<'_>> = vec![
-//            create_token("(", None, TokenType::LEFT_PAREN, 1),
-//            create_token("(", None, TokenType::LEFT_PAREN, 1),
-//            create_token(")", None, TokenType::RIGHT_PAREN, 1),
-//        ];
-//
-//        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
-//
-//        assert_eq!(lexed_input, output_tokens);
-//    }
-//
-//    #[test]
-//    fn test_lex_braces_ok() {
-//        let input = "{{}}";
-//        let output_tokens: Vec<Token<'_>> = vec![
-//            create_token("{", None, TokenType::LEFT_BRACE, 1),
-//            create_token("{", None, TokenType::LEFT_BRACE, 1),
-//            create_token("}", None, TokenType::RIGHT_BRACE, 1),
-//            create_token("}", None, TokenType::RIGHT_BRACE, 1),
-//        ];
-//
-//        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
-//
-//        assert_eq!(lexed_input, output_tokens);
-//    }
-//
-//    #[test]
-//    fn test_lex_braces_paren_mixed_ok() {
-//        let input = "({*.,+*})";
-//        let output_tokens: Vec<Token<'_>> = vec![
-//            create_token("(", None, TokenType::LEFT_PAREN, 1),
-//            create_token("{", None, TokenType::LEFT_BRACE, 1),
-//            create_token("*", None, TokenType::STAR, 1),
-//            create_token(".", None, TokenType::DOT, 1),
-//            create_token(",", None, TokenType::COMMA, 1),
-//            create_token("+", None, TokenType::PLUS, 1),
-//            create_token("*", None, TokenType::STAR, 1),
-//            create_token("}", None, TokenType::RIGHT_BRACE, 1),
-//            create_token(")", None, TokenType::RIGHT_PAREN, 1),
-//        ];
-//
-//        let lexed_input: Vec<Token<'_>> = from_input_ok(input, 1);
-//
-//        assert_eq!(lexed_input, output_tokens);
-//    }
-//}
+impl<'a> From<&'a str> for Lexer<'a> {
+    fn from(value: &'a str) -> Self {
+        let input = value
+            .lines()
+            .map(|line| line.as_bytes())
+            .collect::<Vec<&'a [u8]>>();
+
+        Self {
+            tokens: vec![],
+            input,
+            line: &[],
+            line_number: 0,
+            current_char_index: 0,
+        }
+    }
+}
+
+impl TokenType {
+    fn format_float<'a>(&self, literal: &str, float_value: &f64) -> String {
+        if let Some((integer, exponent)) = literal.split_once(".") {
+            if exponent.parse::<usize>() == Ok(0) {
+                return integer.to_string() + ".0";
+            }
+        }
+
+        float_value.to_string()
+    }
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::LEFT_PAREN => write!(f, "("),
+            TokenType::RIGHT_PAREN => write!(f, ")"),
+            TokenType::LEFT_BRACE => write!(f, "{{"),
+            TokenType::RIGHT_BRACE => write!(f, "}}"),
+            TokenType::COMMA => write!(f, ","),
+            TokenType::DOT => write!(f, "."),
+            TokenType::MINUS => write!(f, "-"),
+            TokenType::PLUS => write!(f, "+"),
+            TokenType::SLASH => write!(f, "/"),
+            TokenType::STAR => write!(f, "*"),
+            TokenType::SEMICOLON => write!(f, ";"),
+            TokenType::BANG => write!(f, "!"),
+            TokenType::BANG_EQUAL => write!(f, "!="),
+            TokenType::EQUAL => write!(f, "="),
+            TokenType::EQUAL_EQUAL => write!(f, "=="),
+            TokenType::GREATER => write!(f, ">"),
+            TokenType::GREATER_EQUAL => write!(f, ">="),
+            TokenType::LESS => write!(f, "<"),
+            TokenType::LESS_EQUAL => write!(f, "<="),
+            TokenType::IDENTIFIER(ident) => write!(f, "{ident}"),
+            TokenType::STRING(value) => write!(f, "{value}"),
+            TokenType::NUMBER_FLOAT(literal, float_value) => {
+                write!(f, "{}", self.format_float(literal, float_value))
+            }
+            TokenType::NUMBER_INT(value) => write!(f, "{value}.0"),
+            TokenType::AND => write!(f, "and"),
+            TokenType::CLASS => write!(f, "class"),
+            TokenType::ELSE => write!(f, "else"),
+            TokenType::FALSE => write!(f, "false"),
+            TokenType::FUN => write!(f, "fun"),
+            TokenType::FOR => write!(f, "for"),
+            TokenType::IF => write!(f, "if"),
+            TokenType::NIL => write!(f, "nil"),
+            TokenType::OR => write!(f, "or"),
+            TokenType::PRINT => write!(f, "print"),
+            TokenType::RETURN => write!(f, "return"),
+            TokenType::SUPER => write!(f, "super"),
+            TokenType::THIS => write!(f, "this"),
+            TokenType::TRUE => write!(f, "true"),
+            TokenType::VAR => write!(f, "var"),
+            TokenType::WHILE => write!(f, "while"),
+            TokenType::EOF => write!(f, "EOF"),
+        }
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.token_type {
+            TokenType::LEFT_PAREN => write!(f, "LEFT_PAREN ( null"),
+            TokenType::RIGHT_PAREN => write!(f, "RIGHT_PAREN ) null"),
+            TokenType::LEFT_BRACE => write!(f, "LEFT_BRACE {{ null"),
+            TokenType::RIGHT_BRACE => write!(f, "RIGHT_BRACE }} null"),
+            TokenType::COMMA => write!(f, "COMMA , null"),
+            TokenType::DOT => write!(f, "DOT . null"),
+            TokenType::MINUS => write!(f, "MINUS - null"),
+            TokenType::PLUS => write!(f, "PLUS + null"),
+            TokenType::SLASH => write!(f, "SLASH / null"),
+            TokenType::STAR => write!(f, "STAR * null"),
+            TokenType::SEMICOLON => write!(f, "SEMICOLON ; null"),
+            TokenType::BANG => write!(f, "BANG ! null"),
+            TokenType::BANG_EQUAL => write!(f, "BANG_EQUAL != null"),
+            TokenType::EQUAL => write!(f, "EQUAL = null"),
+            TokenType::EQUAL_EQUAL => write!(f, "EQUAL_EQUAL == null"),
+            TokenType::GREATER => write!(f, "GREATER > null"),
+            TokenType::GREATER_EQUAL => write!(f, "GREATER_EQUAL >= null"),
+            TokenType::LESS => write!(f, "LESS < null"),
+            TokenType::LESS_EQUAL => write!(f, "LESS_EQUAL <= null"),
+            TokenType::IDENTIFIER(ident) => write!(f, "IDENTIFIER {ident} null"),
+            TokenType::STRING(value) => write!(f, "STRING \"{value}\" {value}"),
+            TokenType::NUMBER_FLOAT(literal, float) => write!(f, "NUMBER {literal} {float}"),
+            TokenType::NUMBER_INT(int) => write!(f, "NUMBER {int} {int}.0"),
+            TokenType::AND => write!(f, "AND and null"),
+            TokenType::CLASS => write!(f, "CLASS class null"),
+            TokenType::ELSE => write!(f, "ELSE else null"),
+            TokenType::FALSE => write!(f, "FALSE false null"),
+            TokenType::FUN => write!(f, "FUN fun null"),
+            TokenType::FOR => write!(f, "FOR for null"),
+            TokenType::IF => write!(f, "IF if null"),
+            TokenType::NIL => write!(f, "NIL nil null"),
+            TokenType::OR => write!(f, "OR or null"),
+            TokenType::PRINT => write!(f, "PRINT print null"),
+            TokenType::RETURN => write!(f, "RETURN return null"),
+            TokenType::SUPER => write!(f, "SUPER super null"),
+            TokenType::THIS => write!(f, "THIS this null"),
+            TokenType::TRUE => write!(f, "TRUE true null"),
+            TokenType::VAR => write!(f, "VAR var null"),
+            TokenType::WHILE => write!(f, "WHILE while null"),
+            TokenType::EOF => write!(f, "EOF  null"),
+        }
+    }
+}
+
+impl Token {
+    pub fn from_eof() -> Self {
+        Self {
+            token_type: TokenType::EOF,
+            line_number: 999,
+            column_number: 999,
+        }
+    }
+}

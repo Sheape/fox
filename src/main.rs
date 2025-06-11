@@ -1,3 +1,4 @@
+use crate::parser::Parser;
 use std::env;
 use std::fs;
 
@@ -6,9 +7,9 @@ mod lexer;
 mod parser;
 
 pub use error::{Error, Result};
-use lexer::Line;
-use lexer::Token;
-use parser::Parser;
+use lexer::Lexer;
+//use lexer::Line;
+//use parser::Parser;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -27,24 +28,10 @@ fn main() {
                 String::new()
             });
 
-            let mut has_error = false;
-
-            for (line_number, line) in file_contents.lines().enumerate() {
-                let current_line = Line::from_string(line.trim(), line_number + 1).tokenize();
-                current_line.tokens.iter().for_each(|result| match result {
-                    Ok(token) => println!("{token}"),
-                    Err(err) => {
-                        has_error = true;
-                        eprintln!("{err}")
-                    }
-                });
-            }
-
-            println!("{}", Token::from_eof());
-
-            if has_error {
-                std::process::exit(65)
-            }
+            let _ = Lexer::from(file_contents.as_str())
+                .tokenize()
+                .print()
+                .then(|| std::process::exit(65));
         }
         "parse" => {
             let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
@@ -52,26 +39,14 @@ fn main() {
                 String::new()
             });
 
-            let tokens = Line::tokenize_from_file(&file_contents);
-            let ok_tokens: Vec<Token> = tokens
-                .into_iter()
-                .map(|token| match token {
-                    Ok(token) => token,
-                    Err(err) => {
-                        eprintln!("{err}");
-                        std::process::exit(65);
-                    }
-                })
-                .collect();
-            let parser = Parser::from_tokens(ok_tokens);
-            match parser.parse() {
-                Ok(statement) => println!("{}", &statement),
+            let lexer = Lexer::from(file_contents.as_str()).tokenize();
+            match Parser::from(lexer).parse() {
+                Ok(statement) => println!("{statement}"),
                 Err(err) => {
                     eprintln!("{err}");
                     std::process::exit(65)
                 }
             }
-            //dbg!(&statement);
         }
         _ => {
             eprintln!("Unknown command: {}", command);
