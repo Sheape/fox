@@ -55,15 +55,18 @@ fn main() {
             });
 
             let lexer = Lexer::from(file_contents.as_str()).tokenize();
-            println!(
-                "{}",
-                Evaluator {
-                    statements: Parser::from(lexer).parse(),
-                    current_index: 0,
+            match (Evaluator {
+                statements: Parser::from(lexer).parse(),
+                current_index: 0,
+            }
+            .evaluate_statement())
+            {
+                Ok(value) => println!("{value}"),
+                Err(err) => {
+                    eprintln!("{err}");
+                    std::process::exit(70)
                 }
-                .evaluate_statement()
-                .unwrap(),
-            )
+            }
         }
         _ => {
             eprintln!("Unknown command: {}", command);
