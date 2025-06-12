@@ -68,10 +68,20 @@ impl Evaluator<'_> {
             TokenType::MINUS => first - second,
             TokenType::STAR => first * second,
             TokenType::SLASH => first / second,
-            TokenType::GREATER => Ok(Value::Boolean(first > second)),
-            TokenType::GREATER_EQUAL => Ok(Value::Boolean(first >= second)),
-            TokenType::LESS => Ok(Value::Boolean(first < second)),
-            TokenType::LESS_EQUAL => Ok(Value::Boolean(first <= second)),
+            TokenType::GREATER
+            | TokenType::GREATER_EQUAL
+            | TokenType::LESS
+            | TokenType::LESS_EQUAL => match first.partial_cmp(&second) {
+                Some(order) => match order {
+                    std::cmp::Ordering::Less => Ok(Value::Boolean(first < second)),
+                    std::cmp::Ordering::Equal => Ok(Value::Boolean(first == second)),
+                    std::cmp::Ordering::Greater => Ok(Value::Boolean(first > second)),
+                },
+                None => Err(Error::InvalidComparisonError {
+                    left: first,
+                    right: second,
+                }),
+            },
             TokenType::EQUAL_EQUAL => Ok(Value::Boolean(first == second)),
             TokenType::BANG_EQUAL => Ok(Value::Boolean(first != second)),
             _ => Err(Error::InvalidBinaryOperatorError {

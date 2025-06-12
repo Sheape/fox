@@ -18,6 +18,7 @@ pub enum Error {
     InvalidBinaryOperatorError { left: Value, right: Value },
     InvalidLiteralError { token_type: TokenType },
     CannotApplyNegationError { value: Value },
+    InvalidComparisonError { left: Value, right: Value },
 }
 
 impl std::fmt::Display for Error {
@@ -58,6 +59,9 @@ impl std::fmt::Display for Error {
             }
             Error::CannotApplyNegationError { value } => {
                 format!("Error: Cannot apply negation to {value}.")
+            }
+            Error::InvalidComparisonError { left, right } => {
+                format!("Error: Cannot compare {left} to {right}.")
             }
         };
 
