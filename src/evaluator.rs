@@ -68,6 +68,10 @@ impl Evaluator<'_> {
             TokenType::MINUS => first - second,
             TokenType::STAR => first * second,
             TokenType::SLASH => first / second,
+            TokenType::GREATER => Ok(Value::Boolean(first > second)),
+            TokenType::GREATER_EQUAL => Ok(Value::Boolean(first >= second)),
+            TokenType::LESS => Ok(Value::Boolean(first < second)),
+            TokenType::LESS_EQUAL => Ok(Value::Boolean(first <= second)),
             TokenType::EQUAL_EQUAL => Ok(Value::Boolean(first == second)),
             TokenType::BANG_EQUAL => Ok(Value::Boolean(first != second)),
             _ => Err(Error::InvalidBinaryOperatorError {
@@ -168,6 +172,20 @@ impl PartialEq for Value {
             (Self::Integer(left), Self::Integer(right)) => left == right,
             (Self::Boolean(left), Self::Boolean(right)) => left == right,
             _ => false,
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Float(left), Value::Float(right)) => Some(left.partial_cmp(right)?),
+            (Value::Float(left), Value::Integer(right)) => {
+                Some(left.partial_cmp(&(*right as f64))?)
+            }
+            (Value::Integer(left), Value::Float(right)) => Some((*left as f64).partial_cmp(right)?),
+            (Value::Integer(left), Value::Integer(right)) => Some(left.partial_cmp(right)?),
+            _ => None,
         }
     }
 }
