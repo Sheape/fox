@@ -152,7 +152,9 @@ impl Div for Value {
             (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left / right)),
             (Value::Float(left), Value::Integer(right)) => Ok(Value::Float(left / (right as f64))),
             (Value::Integer(left), Value::Float(right)) => Ok(Value::Float((left as f64) / right)),
-            (Value::Integer(left), Value::Integer(right)) => Ok(Value::Integer(left / right)),
+            (Value::Integer(left), Value::Integer(right)) => {
+                Ok(Value::Float((left as f64) / (right as f64)))
+            }
             (left, right) => Err(Error::InvalidOperandError { left, right }),
         }
     }
