@@ -1,15 +1,15 @@
-use crate::parser::Parser;
 use std::env;
 use std::fs;
 
 mod error;
+mod evaluator;
 mod lexer;
 mod parser;
 
 pub use error::{Error, Result};
+use evaluator::Evaluator;
 use lexer::Lexer;
-//use lexer::Line;
-//use parser::Parser;
+use parser::Parser;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -47,6 +47,23 @@ fn main() {
                     std::process::exit(65)
                 }
             }
+        }
+        "evaluate" => {
+            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+                eprintln!("Failed to read file {}", filename);
+                String::new()
+            });
+
+            let lexer = Lexer::from(file_contents.as_str()).tokenize();
+            println!(
+                "{}",
+                Evaluator {
+                    statements: Parser::from(lexer).parse(),
+                    current_index: 0,
+                }
+                .evaluate_statement()
+                .unwrap(),
+            )
         }
         _ => {
             eprintln!("Unknown command: {}", command);

@@ -52,6 +52,8 @@ impl Display for Expression<'_> {
 
 impl From<Lexer<'_>> for Parser<'_> {
     fn from(value: Lexer<'_>) -> Self {
+        value.print_errors().then(|| std::process::exit(65));
+
         let lexed_tokens: Vec<Token> = value
             .tokens
             .into_iter()

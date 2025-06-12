@@ -4,7 +4,7 @@ use crate::{Error, Result};
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     // Single chars
     LEFT_PAREN,
@@ -96,6 +96,19 @@ impl Lexer<'_> {
         });
 
         println!("{}", Token::from_eof());
+
+        has_error
+    }
+
+    pub fn print_errors(&self) -> bool {
+        let mut has_error = false;
+        self.tokens.iter().for_each(|result| match result {
+            Ok(_) => (),
+            Err(err) => {
+                eprintln!("{err}");
+                has_error = true
+            }
+        });
 
         has_error
     }
@@ -282,7 +295,7 @@ impl<'a> From<&'a str> for Lexer<'a> {
 }
 
 impl TokenType {
-    fn format_float<'a>(&self, literal: &str, float_value: &f64) -> String {
+    fn format_float(&self, literal: &str, float_value: &f64) -> String {
         if let Some((integer, exponent)) = literal.split_once(".") {
             if exponent.parse::<usize>() == Ok(0) {
                 return integer.to_string() + ".0";
@@ -366,7 +379,11 @@ impl Display for Token {
             TokenType::LESS_EQUAL => write!(f, "LESS_EQUAL <= null"),
             TokenType::IDENTIFIER(ident) => write!(f, "IDENTIFIER {ident} null"),
             TokenType::STRING(value) => write!(f, "STRING \"{value}\" {value}"),
-            TokenType::NUMBER_FLOAT(literal, float) => write!(f, "NUMBER {literal} {float}"),
+            TokenType::NUMBER_FLOAT(literal, float) => write!(
+                f,
+                "NUMBER {literal} {}",
+                &self.token_type.format_float(literal, float)
+            ),
             TokenType::NUMBER_INT(int) => write!(f, "NUMBER {int} {int}.0"),
             TokenType::AND => write!(f, "AND and null"),
             TokenType::CLASS => write!(f, "CLASS class null"),
