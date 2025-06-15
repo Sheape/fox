@@ -1,9 +1,11 @@
 [package]
-name = "codecrafters-interpreter"
+name = "fox"
 version = "0.1.0"
-authors = ["Codecrafters <hello@codecrafters.io>"]
-edition = "2021"
-rust-version = "1.80"
+authors = ["Sheape <paulgeraldpare@gmail.com>"]
+description = "Fast interpreter for the Lox programming language."
+repository = "https://github.com/Sheape/fox"
+edition = "2024"
+rust-version = "1.86"
 
 [dependencies]
 anyhow = "1.0.68"                                # error handling
