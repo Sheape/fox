@@ -1,6 +1,7 @@
 <div align="center">
   <img src="https://github.com/user-attachments/assets/c897b8e9-a218-47a9-a25e-d19add09c36e" alt="Fox" width="100%" />
 
+  [![Release](https://github.com/Sheape/fox/actions/workflows/release.yml/badge.svg)](https://github.com/Sheape/fox/actions/workflows/release.yml)
   ![Rust version](https://img.shields.io/badge/cargo-v1.86.0-f64d00)
 </div>
 
