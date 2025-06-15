@@ -8,4 +8,4 @@
 
 set -e # Exit on failure
 
-cargo build --release --target-dir=/tmp/codecrafters-build-interpreter-rust --manifest-path Cargo.toml
+cargo build --release --target-dir=/tmp/fox --manifest-path Cargo.toml

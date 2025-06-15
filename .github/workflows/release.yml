@@ -6,6 +6,9 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
 permissions:
   contents: write
+env:
+  CARGO_INCREMENTAL: 0
+  BINARY_ARTIFACT_NAME: "fox-release-${{ github.ref_name }}"
 jobs:
   generate-changelog:
     name: Generate Changelog
