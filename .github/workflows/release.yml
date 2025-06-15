@@ -1,0 +1,76 @@
+name: Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+permissions:
+  contents: write
+jobs:
+  generate-changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      release_body: ${{ steps.git-cliff.outputs.content }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: -v --latest --no-exec --github-repo ${{ github.repository }}
+        env:
+          OUTPUT: CHANGELOG.md
+  build:
+    name: Build Rust Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - name: Setup caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release-build"
+      - name: Compile Rust Binary
+        run: cargo build --release --bin fox
+      - name: Upload Binary to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_ARTIFACT_NAME }}
+          path: target/release/fox
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: ["generate-changelog", "build"]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Create Release directory
+        run: mkdir -pv target/release
+      - name: Download Rust Binary Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_ARTIFACT_NAME }}
+          path: ./target/release
+      - name: Rename binary
+        run: mv -v target/release/fox target/release/fox-linux-x86_64-${{ github.ref_name }}
+      - name: Create Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: target/release/fox-linux-x86_64-${{ github.ref_name }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          overwrite: true
+          release_name: "Release ${{ github.ref_name }}"
+          body: "${{ needs.generate-changelog.outputs.release_body }}"
