@@ -8,6 +8,8 @@ use crate::{
 #[derive(Debug)]
 pub enum Statement<'a> {
     Literal(Expression<'a>),
+    Expr(Expression<'a>, &'a Token),             // expression ";"
+    Print(&'a Token, Expression<'a>, &'a Token), // "print" expression ";"
 }
 
 #[derive(Debug)]
@@ -29,6 +31,8 @@ impl Display for Statement<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Literal(expr) => write!(f, "{expr}"),
+            Statement::Expr(expr, _) => write!(f, "{expr};"),
+            Statement::Print(_, expr, _) => write!(f, "print {expr};"),
         }
     }
 }
@@ -85,6 +89,16 @@ impl Parser<'_> {
     pub fn parse(&self) -> Result<Statement<'_>> {
         self.parse_expr()
             .map(|expr| Ok(Statement::Literal(*expr)))?
+    }
+
+    pub fn parse_expr_statement(&self) -> Result<Statement<'_>> {
+        let next_token = self.read_token();
+        match next_token {
+            Some(semi_colon) if semi_colon.token_type == TokenType::SEMICOLON => self
+                .parse_expr()
+                .map(|expr| Ok(Statement::Expr(*expr, semi_colon)))?,
+            _ => Err(Error::MissingSemiColon),
+        }
     }
 
     fn parse_expr(&self) -> Result<Box<Expression>> {

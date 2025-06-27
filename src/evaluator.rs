@@ -29,6 +29,8 @@ impl Evaluator<'_> {
 
         match statement {
             Statement::Literal(expression) => self.evaluate_expr(expression),
+            Statement::Expr(expression, _) => self.evaluate_expr(expression),
+            Statement::Print(_, expression, _) => self.evaluate_expr(expression),
         }
     }
 

@@ -11,6 +11,8 @@ pub enum Error {
 
     // Parser Errors
     SyntaxError { line_number: usize, token: String },
+    // TODO: add line numbers later
+    MissingSemiColon,
 
     // Eval Errors
     InvalidOperandError { left: Value, right: Value },
@@ -44,6 +46,9 @@ impl std::fmt::Display for Error {
                     "[line {}] Error at '{token}': Expect expression",
                     line_number + 1
                 )
+            }
+            Error::MissingSemiColon => {
+                format!("[line <fix this later>] Error: Missing semi-colon.")
             }
             Error::InvalidOperandError { left, right } => {
                 format!("Error: Unsupported operand: {left} to {right}.")
