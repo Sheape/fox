@@ -2,7 +2,7 @@ use crate::{evaluator::Value, lexer::TokenType};
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
     // Lexer Errors
     InvalidTokenError { line_number: usize, token: String },

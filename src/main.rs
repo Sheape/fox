@@ -1,10 +1,8 @@
-// region: Imports
 use std::env;
 use std::fs;
 
 mod error;
 mod evaluator;
-mod executor;
 mod lexer;
 mod parser;
 
@@ -12,8 +10,6 @@ pub use error::{Error, Result};
 use evaluator::Evaluator;
 use lexer::Lexer;
 use parser::Parser;
-// what region
-// endregion
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -79,8 +75,9 @@ fn main() {
             });
 
             let lexer = Lexer::from(file_contents.as_str()).tokenize();
+            let parser = Parser::from(lexer);
             match (Evaluator {
-                statements: Parser::from(lexer).parse(),
+                statements: parser.parse_print_statement(),
                 current_index: 0,
             }
             .evaluate_statement())
@@ -88,7 +85,7 @@ fn main() {
                 Ok(value) => println!("{value}"),
                 Err(err) => {
                     eprintln!("{err}");
-                    std::process::exit(70)
+                    std::process::exit(65)
                 }
             }
         }

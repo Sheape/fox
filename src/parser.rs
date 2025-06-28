@@ -1,18 +1,21 @@
-use std::{cell::Cell, fmt::Display};
+use std::{
+    cell::Cell,
+    fmt::{Debug, Display},
+};
 
 use crate::{
     lexer::{Lexer, Token, TokenType},
     Error, Result,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement<'a> {
     Literal(Expression<'a>),
-    Expr(Expression<'a>, &'a Token),             // expression ";"
-    Print(&'a Token, Expression<'a>, &'a Token), // "print" expression ";"
+    Expr(Expression<'a>),  // expression ";"
+    Print(Expression<'a>), // "print" expression ";"
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression<'a> {
     Binary(Box<Expression<'a>>, &'a Token, Box<Expression<'a>>),
     Unary(&'a Token, Box<Expression<'a>>),
@@ -27,15 +30,27 @@ pub struct Parser<'a> {
     current_token_index: Cell<usize>,
 }
 
+//pub struct StatementResult<'a>(pub Result<Statement<'a>>);
+
 impl Display for Statement<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Literal(expr) => write!(f, "{expr}"),
-            Statement::Expr(expr, _) => write!(f, "{expr};"),
-            Statement::Print(_, expr, _) => write!(f, "print {expr};"),
+            Statement::Expr(expr) => write!(f, "{expr};"),
+            Statement::Print(expr) => write!(f, "print {expr};"),
         }
     }
 }
+
+//impl Default for StatementResult<'_> {
+//    fn default() -> Self {
+//        StatementResult(Ok(Statement::Literal(Expression::Literal(&Token {
+//            token_type: TokenType::EOF,
+//            line_number: 0,
+//            column_number: 0,
+//        }))))
+//    }
+//}
 
 impl Display for Expression<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -91,12 +106,25 @@ impl Parser<'_> {
             .map(|expr| Ok(Statement::Literal(*expr)))?
     }
 
-    pub fn parse_expr_statement(&self) -> Result<Statement<'_>> {
+    pub fn parse_print_statement(&self) -> Result<Statement<'_>> {
+        match self.get_token() {
+            Some(first_token) if first_token.token_type == TokenType::PRINT => {
+                let _ = self.read_token();
+                let expr_statement = self.parse_expr_statement()?;
+                Ok(Statement::Print(*expr_statement))
+            }
+            _ => {
+                let expr_statement = self.parse_expr_statement()?;
+                Ok(Statement::Expr(*expr_statement))
+            }
+        }
+    }
+
+    pub fn parse_expr_statement(&self) -> Result<Box<Expression>> {
+        let expr = self.parse_expr()?;
         let next_token = self.read_token();
         match next_token {
-            Some(semi_colon) if semi_colon.token_type == TokenType::SEMICOLON => self
-                .parse_expr()
-                .map(|expr| Ok(Statement::Expr(*expr, semi_colon)))?,
+            Some(semi_colon) if semi_colon.token_type == TokenType::SEMICOLON => Ok(expr),
             _ => Err(Error::MissingSemiColon),
         }
     }

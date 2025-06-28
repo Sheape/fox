@@ -14,7 +14,7 @@ pub struct Evaluator<'a> {
     pub current_index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     Float(f64),
@@ -25,26 +25,29 @@ pub enum Value {
 
 impl Evaluator<'_> {
     pub fn evaluate_statement(self) -> Result<Value> {
-        let statement = self.statements.as_ref().unwrap();
+        let statement = self.statements.clone();
 
         match statement {
-            Statement::Literal(expression) => self.evaluate_expr(expression),
-            Statement::Expr(expression, _) => self.evaluate_expr(expression),
-            Statement::Print(_, expression, _) => self.evaluate_expr(expression),
+            Ok(
+                Statement::Literal(expression)
+                | Statement::Expr(expression)
+                | Statement::Print(expression),
+            ) => self.evaluate_expr(expression),
+            Err(err) => Err(err),
         }
     }
 
-    fn evaluate_expr(&self, expr: &Expression) -> Result<Value> {
+    fn evaluate_expr(&self, expr: Expression) -> Result<Value> {
         match expr {
             Expression::Literal(token) => self.evaluate_literal(token),
             Expression::Binary(first_expr, operator, second_expr) => {
-                let first_expr_value = self.evaluate_expr(first_expr)?;
-                let second_expr_value = self.evaluate_expr(second_expr)?;
+                let first_expr_value = self.evaluate_expr(*first_expr)?;
+                let second_expr_value = self.evaluate_expr(*second_expr)?;
                 self.evaluate_binary(first_expr_value, operator, second_expr_value)
             }
-            Expression::Grouping(expr) => self.evaluate_expr(expr),
+            Expression::Grouping(expr) => self.evaluate_expr(*expr),
             Expression::Unary(prefix, expr) => {
-                let literal = self.evaluate_expr(expr)?;
+                let literal = self.evaluate_expr(*expr)?;
                 self.evaluate_unary(prefix, literal)
             }
         }
