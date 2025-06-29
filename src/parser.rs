@@ -27,6 +27,7 @@ pub enum Expression<'a> {
 pub struct Parser<'a> {
     pub tokens: Vec<Token>,
     pub statements: Vec<Statement<'a>>,
+    pub line_offsets: Vec<usize>,
     current_token_index: Cell<usize>,
 }
 
@@ -69,17 +70,18 @@ impl Display for Expression<'_> {
     }
 }
 
-impl From<Lexer<'_>> for Parser<'_> {
-    fn from(value: Lexer<'_>) -> Self {
+impl From<&mut Lexer<'_>> for Parser<'_> {
+    fn from(value: &mut Lexer<'_>) -> Self {
         value.print_errors().then(|| std::process::exit(65));
 
-        let lexed_tokens: Vec<Token> = value
-            .tokens
-            .into_iter()
-            .map(|result| result.unwrap())
-            .collect();
+        let tokens = std::mem::take(&mut value.tokens);
+        let line_offsets = std::mem::take(&mut value.line_offsets);
+
+        let lexed_tokens: Vec<Token> = tokens.into_iter().map(|result| result.unwrap()).collect();
+
         Self {
             tokens: lexed_tokens,
+            line_offsets,
             statements: vec![],
             current_token_index: Cell::new(0),
         }
@@ -231,7 +233,7 @@ impl Parser<'_> {
                     Ok(Box::new(Expression::Grouping(node)))
                 } else {
                     Err(Error::SyntaxError {
-                        line_number: current_token.line_number,
+                        line_number: current_token.start,
                         token: format!("{}", current_token.token_type),
                     })
                 }
@@ -243,7 +245,7 @@ impl Parser<'_> {
             | TokenType::FALSE
             | TokenType::NIL => Ok(Box::new(Expression::Literal(current_token))),
             _ => Err(Error::SyntaxError {
-                line_number: current_token.line_number,
+                line_number: current_token.start,
                 token: format!("{}", current_token.token_type),
             }),
         }

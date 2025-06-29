@@ -39,8 +39,10 @@ fn main() {
                 String::new()
             });
 
-            let lexer = Lexer::from(file_contents.as_str()).tokenize();
-            match Parser::from(lexer).parse() {
+            let mut lexer = Lexer::from(file_contents.as_str());
+            let mut_lexer = lexer.tokenize();
+            let parser = Parser::from(mut_lexer);
+            match parser.parse() {
                 Ok(statement) => println!("{statement}"),
                 Err(err) => {
                     eprintln!("{err}");
@@ -54,9 +56,10 @@ fn main() {
                 String::new()
             });
 
-            let lexer = Lexer::from(file_contents.as_str()).tokenize();
+            let mut lexer = Lexer::from(file_contents.as_str());
+            let mut_lexer = lexer.tokenize();
             match (Evaluator {
-                statements: Parser::from(lexer).parse(),
+                statements: Parser::from(mut_lexer).parse(),
                 current_index: 0,
             }
             .evaluate_statement())
@@ -74,8 +77,9 @@ fn main() {
                 String::new()
             });
 
-            let lexer = Lexer::from(file_contents.as_str()).tokenize();
-            let parser = Parser::from(lexer);
+            let mut lexer = Lexer::from(file_contents.as_str());
+            let mut_lexer = lexer.tokenize();
+            let parser = Parser::from(mut_lexer);
             match (Evaluator {
                 statements: parser.parse_print_statement(),
                 current_index: 0,

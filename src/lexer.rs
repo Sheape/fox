@@ -61,30 +61,25 @@ pub enum TokenType {
 #[derive(Debug)]
 pub struct Lexer<'a> {
     pub tokens: Vec<Result<Token>>,
-    input: Vec<&'a [u8]>,
-    line: &'a [u8],
-    line_number: usize,
-    current_char_index: usize,
+    pub line_offsets: Vec<usize>,
+    input: &'a [u8],
+    offset: usize,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
+    pub start: usize,
+}
+
+#[derive(Debug)]
+pub struct TokenMetadata {
+    pub start: usize,
+    pub end: usize,
     pub line_number: usize,
-    pub column_number: usize,
 }
 
 impl Lexer<'_> {
-    pub fn tokenize(mut self) -> Self {
-        let input = std::mem::take(&mut self.input);
-        for line in input {
-            self.line = line;
-            self.tokenize_line(line);
-        }
-
-        self
-    }
-
     pub fn print(&self) -> bool {
         let mut has_error = false;
         self.tokens.iter().for_each(|result| match result {
@@ -94,8 +89,6 @@ impl Lexer<'_> {
                 has_error = true
             }
         });
-
-        println!("{}", Token::from_eof());
 
         has_error
     }
@@ -113,9 +106,10 @@ impl Lexer<'_> {
         has_error
     }
 
-    fn tokenize_line(&mut self, line: &[u8]) {
-        while self.current_char_index < line.len() {
-            let token_type: Result<TokenType> = match line[self.current_char_index] {
+    pub fn tokenize(&mut self) -> &mut Self {
+        while self.offset < self.input.len() {
+            let start = self.offset;
+            let token_type: Result<TokenType> = match self.input[start] {
                 b'(' => Ok(TokenType::LEFT_PAREN),
                 b')' => Ok(TokenType::RIGHT_PAREN),
                 b'{' => Ok(TokenType::LEFT_BRACE),
@@ -132,7 +126,9 @@ impl Lexer<'_> {
                 b'>' => Ok(self.read_double(TokenType::GREATER, TokenType::GREATER_EQUAL)),
                 b'/' => {
                     if self.peek() == Some(b'/') {
-                        break;
+                        self.read_char();
+                        self.read_comment();
+                        continue;
                     } else {
                         Ok(TokenType::SLASH)
                     }
@@ -140,6 +136,25 @@ impl Lexer<'_> {
                 b'\t' | b' ' => {
                     self.read_char();
                     continue;
+                }
+                #[cfg(not(target_os = "windows"))]
+                b'\n' => {
+                    self.read_char();
+                    self.read_line();
+                    continue;
+                }
+                #[cfg(target_os = "windows")]
+                b'\r' => {
+                    // TODO: Update this to use let-chains in Rust 1.88.0
+                    match self.peek() {
+                        Some(next_token) if next_token == b'\n' => {
+                            self.read_char();
+                            self.read_char();
+                            self.read_line();
+                            continue;
+                        }
+                        _ => continue, // TODO: maybe throw an error if its just \r
+                    }
                 }
                 b'"' => self.read_string(),
                 b'0'..=b'9' => self.read_number(),
@@ -166,34 +181,37 @@ impl Lexer<'_> {
                     }
                 }
                 _ => Err(Error::InvalidTokenError {
-                    line_number: self.line_number,
-                    token: (line[self.current_char_index] as char).to_string(),
+                    line_number: self.line_offsets.len() + 1,
+                    token: (self.input[start] as char).to_string(),
                 }),
             };
 
             self.tokens.push(token_type.map(|tok_type| Token {
                 token_type: tok_type,
-                column_number: self.current_char_index,
-                line_number: self.line_number,
+                start,
             }));
 
             self.read_char();
         }
 
-        self.read_line();
+        self.tokens.push(Ok(Token {
+            token_type: TokenType::EOF,
+            start: self.offset - 1,
+        }));
+
+        self
     }
 
     fn peek(&self) -> Option<u8> {
-        self.line.get(self.current_char_index + 1).copied()
+        self.input.get(self.offset + 1).copied()
     }
 
     fn read_line(&mut self) {
-        self.current_char_index = 0;
-        self.line_number += 1;
+        self.line_offsets.push(self.offset);
     }
 
     fn read_char(&mut self) {
-        self.current_char_index += 1;
+        self.offset += 1;
     }
 
     fn read_double(
@@ -209,27 +227,52 @@ impl Lexer<'_> {
         }
     }
 
-    fn read_string(&mut self) -> Result<TokenType> {
-        let starting_index = self.current_char_index;
+    fn read_comment(&mut self) {
         while let Some(char) = self.peek() {
             self.read_char();
-            if char == b'"' {
-                return Ok(TokenType::STRING(
-                    String::from_utf8_lossy(
-                        &self.line[starting_index + 1..self.current_char_index],
-                    )
-                    .into_owned(),
-                ));
+            if char == b'\n' {
+                self.read_line();
+                break;
+            }
+        }
+    }
+
+    fn read_string(&mut self) -> Result<TokenType> {
+        let starting_index = self.offset;
+        while let Some(char) = self.peek() {
+            self.read_char();
+            match char {
+                b'"' => {
+                    return Ok(TokenType::STRING(
+                        String::from_utf8_lossy(&self.input[starting_index + 1..self.offset])
+                            .into_owned(),
+                    ));
+                }
+                #[cfg(not(target_os = "windows"))]
+                b'\n' => {
+                    self.read_line();
+                }
+                #[cfg(target_os = "windows")]
+                b'\r' => {
+                    // TODO: Update this to use let-chains in Rust 1.88.0
+                    if let Some(next_token) = self.peek() {
+                        if next_token == b'\n' {
+                            self.read_char();
+                            self.read_line();
+                        }
+                    }
+                }
+                _ => continue,
             }
         }
 
         Err(Error::UnterminatedStringError {
-            line_number: self.line_number,
+            line_number: self.line_offsets.len() + 1,
         })
     }
 
     fn read_identifier(&mut self) -> String {
-        let starting_index = self.current_char_index;
+        let starting_index = self.offset;
         while let Some(char) = self.peek() {
             if !(char.is_ascii_alphanumeric() || char == b'_') {
                 break;
@@ -237,11 +280,11 @@ impl Lexer<'_> {
             self.read_char();
         }
 
-        String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index]).into_owned()
+        String::from_utf8_lossy(&self.input[starting_index..=self.offset]).into_owned()
     }
 
     fn read_number(&mut self) -> Result<TokenType> {
-        let starting_index = self.current_char_index;
+        let starting_index = self.offset;
         let mut floating_point_count: usize = 0;
         while let Some(current_char) = self.peek() {
             match current_char {
@@ -254,16 +297,11 @@ impl Lexer<'_> {
             }
         }
 
+        let number_as_str = String::from_utf8_lossy(&self.input[starting_index..=self.offset]);
         match floating_point_count {
-            0 => Ok(TokenType::NUMBER_INT(
-                String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index])
-                    .parse::<u64>()
-                    .unwrap(),
-            )),
+            0 => Ok(TokenType::NUMBER_INT(number_as_str.parse::<u64>().unwrap())),
             1 => {
-                let float_literal =
-                    String::from_utf8_lossy(&self.line[starting_index..=self.current_char_index])
-                        .into_owned();
+                let float_literal = number_as_str.into_owned();
                 // TODO: Maybe there's a way to avoid clone() here, just maybe.
                 Ok(TokenType::NUMBER_FLOAT(
                     float_literal.clone(),
@@ -271,7 +309,7 @@ impl Lexer<'_> {
                 ))
             }
             _ => Err(Error::MultipleFloatingPointError {
-                line_number: self.line_number,
+                line_number: self.line_offsets.len() + 1,
             }),
         }
     }
@@ -279,17 +317,13 @@ impl Lexer<'_> {
 
 impl<'a> From<&'a str> for Lexer<'a> {
     fn from(value: &'a str) -> Self {
-        let input = value
-            .lines()
-            .map(|line| line.as_bytes())
-            .collect::<Vec<&'a [u8]>>();
+        let input = value.as_bytes();
 
         Self {
             tokens: vec![],
+            line_offsets: vec![],
             input,
-            line: &[],
-            line_number: 0,
-            current_char_index: 0,
+            offset: 0usize,
         }
     }
 }
@@ -410,8 +444,69 @@ impl Token {
     pub fn from_eof() -> Self {
         Self {
             token_type: TokenType::EOF,
-            line_number: 999,
-            column_number: 999,
+            start: 0,
+        }
+    }
+
+    pub fn compute_metadata_from_offset<'a>(
+        &'a self,
+        line_number_offsets: &'a [usize],
+    ) -> TokenMetadata {
+        // The line number offsets are guaranteed to be sorted.
+        let line_number_index = line_number_offsets
+            .binary_search(&self.start)
+            .unwrap_or_else(|x| x);
+        let start = self.start - (line_number_offsets[line_number_index - 1] + 1);
+        let line_number = line_number_index + 1;
+
+        let length = match &self.token_type {
+            TokenType::LEFT_PAREN
+            | TokenType::RIGHT_PAREN
+            | TokenType::LEFT_BRACE
+            | TokenType::RIGHT_BRACE
+            | TokenType::COMMA
+            | TokenType::DOT
+            | TokenType::MINUS
+            | TokenType::PLUS
+            | TokenType::SLASH
+            | TokenType::STAR
+            | TokenType::SEMICOLON
+            | TokenType::BANG
+            | TokenType::LESS
+            | TokenType::GREATER
+            | TokenType::EQUAL => 1,
+            TokenType::BANG_EQUAL
+            | TokenType::EQUAL_EQUAL
+            | TokenType::GREATER_EQUAL
+            | TokenType::LESS_EQUAL => 2,
+            TokenType::IDENTIFIER(str) => str.len(),
+            TokenType::STRING(str) => str.len() + 2, // str.len() is just the str content without ""
+            TokenType::NUMBER_FLOAT(str, _) => str.len(),
+            TokenType::NUMBER_INT(int) => {
+                if *int == 0 {
+                    1
+                } else {
+                    (*int as f64).log10().floor() as usize + 1
+                }
+            }
+            TokenType::RETURN => 6,
+            TokenType::CLASS
+            | TokenType::FALSE
+            | TokenType::SUPER
+            | TokenType::WHILE
+            | TokenType::PRINT => 5,
+            TokenType::THIS | TokenType::TRUE | TokenType::ELSE => 4,
+            TokenType::AND | TokenType::FUN | TokenType::FOR | TokenType::NIL | TokenType::VAR => 3,
+            TokenType::IF | TokenType::OR => 2,
+            TokenType::EOF => 1,
+        };
+
+        let end = length - 1;
+
+        TokenMetadata {
+            start,
+            end,
+            line_number,
         }
     }
 }
