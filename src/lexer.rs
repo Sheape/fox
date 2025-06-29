@@ -1,6 +1,6 @@
 use std::{char, fmt::Display};
 
-use crate::{Error, Result};
+use crate::{parser::Statement, Error, Result};
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
@@ -59,10 +59,16 @@ pub enum TokenType {
 }
 
 #[derive(Debug)]
-pub struct Lexer<'a> {
+pub struct Program<'a> {
     pub tokens: Vec<Result<Token>>,
     pub line_offsets: Vec<usize>,
-    input: &'a [u8],
+    pub statements: Vec<Statement<'a>>,
+    pub input: &'a [u8],
+}
+
+#[derive(Debug)]
+pub struct Lexer<'a> {
+    program: &'a mut Program<'a>,
     offset: usize,
 }
 
@@ -82,7 +88,7 @@ pub struct TokenMetadata {
 impl Lexer<'_> {
     pub fn print(&self) -> bool {
         let mut has_error = false;
-        self.tokens.iter().for_each(|result| match result {
+        self.program.tokens.iter().for_each(|result| match result {
             Ok(token) => println!("{token}"),
             Err(err) => {
                 eprintln!("{err}");
@@ -95,7 +101,7 @@ impl Lexer<'_> {
 
     pub fn print_errors(&self) -> bool {
         let mut has_error = false;
-        self.tokens.iter().for_each(|result| match result {
+        self.program.tokens.iter().for_each(|result| match result {
             Ok(_) => (),
             Err(err) => {
                 eprintln!("{err}");
@@ -107,9 +113,9 @@ impl Lexer<'_> {
     }
 
     pub fn tokenize(&mut self) -> &mut Self {
-        while self.offset < self.input.len() {
+        while self.offset < self.program.input.len() {
             let start = self.offset;
-            let token_type: Result<TokenType> = match self.input[start] {
+            let token_type: Result<TokenType> = match self.program.input[start] {
                 b'(' => Ok(TokenType::LEFT_PAREN),
                 b')' => Ok(TokenType::RIGHT_PAREN),
                 b'{' => Ok(TokenType::LEFT_BRACE),
@@ -181,12 +187,12 @@ impl Lexer<'_> {
                     }
                 }
                 _ => Err(Error::InvalidTokenError {
-                    line_number: self.line_offsets.len() + 1,
-                    token: (self.input[start] as char).to_string(),
+                    line_number: self.program.line_offsets.len() + 1,
+                    token: (self.program.input[start] as char).to_string(),
                 }),
             };
 
-            self.tokens.push(token_type.map(|tok_type| Token {
+            self.program.tokens.push(token_type.map(|tok_type| Token {
                 token_type: tok_type,
                 start,
             }));
@@ -194,7 +200,7 @@ impl Lexer<'_> {
             self.read_char();
         }
 
-        self.tokens.push(Ok(Token {
+        self.program.tokens.push(Ok(Token {
             token_type: TokenType::EOF,
             start: self.offset - 1,
         }));
@@ -203,11 +209,11 @@ impl Lexer<'_> {
     }
 
     fn peek(&self) -> Option<u8> {
-        self.input.get(self.offset + 1).copied()
+        self.program.input.get(self.offset + 1).copied()
     }
 
     fn read_line(&mut self) {
-        self.line_offsets.push(self.offset);
+        self.program.line_offsets.push(self.offset);
     }
 
     fn read_char(&mut self) {
@@ -244,8 +250,10 @@ impl Lexer<'_> {
             match char {
                 b'"' => {
                     return Ok(TokenType::STRING(
-                        String::from_utf8_lossy(&self.input[starting_index + 1..self.offset])
-                            .into_owned(),
+                        String::from_utf8_lossy(
+                            &self.program.input[starting_index + 1..self.offset],
+                        )
+                        .into_owned(),
                     ));
                 }
                 #[cfg(not(target_os = "windows"))]
@@ -267,7 +275,7 @@ impl Lexer<'_> {
         }
 
         Err(Error::UnterminatedStringError {
-            line_number: self.line_offsets.len() + 1,
+            line_number: self.program.line_offsets.len() + 1,
         })
     }
 
@@ -280,7 +288,7 @@ impl Lexer<'_> {
             self.read_char();
         }
 
-        String::from_utf8_lossy(&self.input[starting_index..=self.offset]).into_owned()
+        String::from_utf8_lossy(&self.program.input[starting_index..=self.offset]).into_owned()
     }
 
     fn read_number(&mut self) -> Result<TokenType> {
@@ -297,7 +305,8 @@ impl Lexer<'_> {
             }
         }
 
-        let number_as_str = String::from_utf8_lossy(&self.input[starting_index..=self.offset]);
+        let number_as_str =
+            String::from_utf8_lossy(&self.program.input[starting_index..=self.offset]);
         match floating_point_count {
             0 => Ok(TokenType::NUMBER_INT(number_as_str.parse::<u64>().unwrap())),
             1 => {
@@ -309,21 +318,8 @@ impl Lexer<'_> {
                 ))
             }
             _ => Err(Error::MultipleFloatingPointError {
-                line_number: self.line_offsets.len() + 1,
+                line_number: self.program.line_offsets.len() + 1,
             }),
-        }
-    }
-}
-
-impl<'a> From<&'a str> for Lexer<'a> {
-    fn from(value: &'a str) -> Self {
-        let input = value.as_bytes();
-
-        Self {
-            tokens: vec![],
-            line_offsets: vec![],
-            input,
-            offset: 0usize,
         }
     }
 }
