@@ -1,6 +1,9 @@
 use std::{char, fmt::Display};
 
-use crate::{parser::Statement, Error, Result};
+use crate::{
+    program::{Lexed, None, Program},
+    Error, Result,
+};
 
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
@@ -59,16 +62,8 @@ pub enum TokenType {
 }
 
 #[derive(Debug)]
-pub struct Program<'a> {
-    pub tokens: Vec<Result<Token>>,
-    pub line_offsets: Vec<usize>,
-    pub statements: Vec<Statement<'a>>,
-    pub input: &'a [u8],
-}
-
-#[derive(Debug)]
-pub struct Lexer<'a> {
-    program: &'a mut Program<'a>,
+pub struct Lexer<'a, State = None> {
+    program: &'a mut Program<'a, State>,
     offset: usize,
 }
 
@@ -85,31 +80,34 @@ pub struct TokenMetadata {
     pub line_number: usize,
 }
 
-impl Lexer<'_> {
-    pub fn print(&self) -> bool {
-        let mut has_error = false;
-        self.program.tokens.iter().for_each(|result| match result {
-            Ok(token) => println!("{token}"),
-            Err(err) => {
-                eprintln!("{err}");
-                has_error = true
-            }
-        });
-
-        has_error
-    }
-
-    pub fn print_errors(&self) -> bool {
-        let mut has_error = false;
-        self.program.tokens.iter().for_each(|result| match result {
-            Ok(_) => (),
-            Err(err) => {
-                eprintln!("{err}");
-                has_error = true
-            }
-        });
-
-        has_error
+impl<'a> Lexer<'a> {
+    //pub fn print(&self) -> bool {
+    //    let mut has_error = false;
+    //    self.program.tokens.iter().for_each(|result| match result {
+    //        Ok(token) => println!("{token}"),
+    //        Err(err) => {
+    //            eprintln!("{err}");
+    //            has_error = true
+    //        }
+    //    });
+    //
+    //    has_error
+    //}
+    //
+    //pub fn print_errors(&self) -> bool {
+    //    let mut has_error = false;
+    //    self.program.tokens.iter().for_each(|result| match result {
+    //        Ok(_) => (),
+    //        Err(err) => {
+    //            eprintln!("{err}");
+    //            has_error = true
+    //        }
+    //    });
+    //
+    //    has_error
+    //}
+    pub fn new(program: &'a mut Program<'a>) -> Self {
+        Self { program, offset: 0 }
     }
 
     pub fn tokenize(&mut self) -> &mut Self {
@@ -191,19 +189,21 @@ impl Lexer<'_> {
                     token: (self.program.input[start] as char).to_string(),
                 }),
             };
-
-            self.program.tokens.push(token_type.map(|tok_type| Token {
-                token_type: tok_type,
-                start,
-            }));
+            match token_type {
+                Ok(tok_type) => self.program.tokens.push(Token {
+                    token_type: tok_type,
+                    start,
+                }),
+                Err(err) => self.program.errors.push(err),
+            }
 
             self.read_char();
         }
 
-        self.program.tokens.push(Ok(Token {
+        self.program.tokens.push(Token {
             token_type: TokenType::EOF,
             start: self.offset - 1,
-        }));
+        });
 
         self
     }
