@@ -7,13 +7,13 @@ use crate::{Error, Result};
 
 // Program states depending on which part of the process they are
 #[derive(Debug)]
-pub enum None {}
+pub struct None {}
 #[derive(Debug)]
-pub enum Lexed {}
+pub struct Lexed {}
 #[derive(Debug)]
-pub enum Parsed {}
+pub struct Parsed {}
 #[derive(Debug)]
-pub enum Evaluated {}
+pub struct Evaluated {}
 
 #[derive(Debug)]
 pub struct Program<'a, State = None> {
@@ -38,6 +38,7 @@ pub enum Declaration<'a> {
         name: &'a Token,
         //expression: Option<
     },
+    Statement,
 }
 
 impl<'a> Program<'a, None> {
