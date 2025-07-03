@@ -44,8 +44,7 @@ pub enum ExprNodeType {
     Literal,
 }
 
-#[derive(Debug, Clone)]
-pub struct NodeId(usize);
+pub type NodeId = usize;
 
 //impl<'a> Iterator for Parser<'a> {
 //    type Item = Result<ASTNode<'a>>;
@@ -119,7 +118,7 @@ impl<'a> Parser<'a> {
         };
 
         self.ast.push(ASTNode::Statement(statement?));
-        Ok(NodeId(self.ast.len() - 1))
+        Ok(self.ast.len() - 1)
     }
 
     fn parse_print_statement(&mut self) -> Result<NodeId> {
@@ -153,7 +152,7 @@ impl<'a> Parser<'a> {
                         rhs: Some(rhs),
                     }));
 
-                    comparison = NodeId(self.ast.len() - 1);
+                    comparison = self.ast.len() - 1;
                 }
                 _ => {
                     break;
@@ -180,7 +179,7 @@ impl<'a> Parser<'a> {
                         lhs: Some(term),
                         rhs: Some(rhs),
                     }));
-                    term = NodeId(self.ast.len() - 1)
+                    term = self.ast.len() - 1
                 }
                 _ => {
                     break;
@@ -204,7 +203,7 @@ impl<'a> Parser<'a> {
                         lhs: Some(factor),
                         rhs: Some(rhs),
                     }));
-                    factor = NodeId(self.ast.len() - 1);
+                    factor = self.ast.len() - 1;
                 }
                 _ => {
                     break;
@@ -228,7 +227,7 @@ impl<'a> Parser<'a> {
                         lhs: Some(unary),
                         rhs: Some(rhs),
                     }));
-                    unary = NodeId(self.ast.len() - 1);
+                    unary = self.ast.len() - 1;
                 }
                 _ => {
                     break;
@@ -251,7 +250,7 @@ impl<'a> Parser<'a> {
                     rhs: None,
                 }));
 
-                Ok(NodeId(self.ast.len() - 1))
+                Ok(self.ast.len() - 1)
             }
             _ => Ok(self.parse_primary()?),
         }
@@ -298,7 +297,7 @@ impl<'a> Parser<'a> {
         };
 
         self.ast.push(ASTNode::Expression(expression?));
-        Ok(NodeId(self.ast.len() - 1))
+        Ok(self.ast.len() - 1)
     }
 }
 
@@ -320,31 +319,30 @@ impl<'a> AST<'a> {
                 } => todo!(),
                 Declaration::Function(function) => todo!(),
                 Declaration::Variable { name, expression } => todo!(),
-                Declaration::Statement(statement) => self.display(&self.0[statement.0]),
+                Declaration::Statement(statement) => self.display(&self.0[*statement]),
             },
             ASTNode::Statement(statement) => match statement {
                 Statement::ExprStatement(node_id) => {
-                    format!("(expression {})", self.display(&self.0[node_id.0]))
+                    format!("(expression {})", self.display(&self.0[*node_id]))
                 }
                 Statement::PrintStatement(node_id) => {
-                    format!("(print {})", self.display(&self.0[node_id.0]))
+                    format!("(print {})", self.display(&self.0[*node_id]))
                 }
             },
             ASTNode::Expression(expression) => match expression.node_type {
                 ExprNodeType::Binary => {
                     // Its okay to clone here because we're just displaying the parsed debug info.
-                    let lhs = self.display(&self.0[expression.lhs.clone().unwrap().0]);
-                    let rhs = self.display(&self.0[expression.rhs.clone().unwrap().0]);
+                    let lhs = self.display(&self.0[expression.lhs.unwrap()]);
+                    let rhs = self.display(&self.0[expression.rhs.unwrap()]);
                     format!("({} {lhs} {rhs})", expression.main_token.token_type)
                 }
                 ExprNodeType::Unary => {
-                    let unary = self.display(&self.0[expression.lhs.clone().unwrap().0]);
+                    let unary = self.display(&self.0[expression.lhs.unwrap()]);
                     format!("({} {unary})", expression.main_token.token_type)
                 }
-                ExprNodeType::Grouping => format!(
-                    "(group {})",
-                    self.display(&self.0[expression.lhs.clone().unwrap().0])
-                ),
+                ExprNodeType::Grouping => {
+                    format!("(group {})", self.display(&self.0[expression.lhs.unwrap()]))
+                }
                 ExprNodeType::Literal => format!("{}", expression.main_token.token_type),
             },
         }
