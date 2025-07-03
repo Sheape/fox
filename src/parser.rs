@@ -1,241 +1,284 @@
-use std::{
-    cell::Cell,
-    fmt::{Debug, Display},
-};
-
 use crate::{
-    lexer::{Lexer, Token, TokenType},
-    Error, Result,
+    lexer::{Token, TokenType},
+    program::Declaration,
+    Result,
 };
-
-#[derive(Debug, Clone)]
-pub enum Statement<'a> {
-    Literal(Expression<'a>),
-    Expr(Expression<'a>),  // expression ";"
-    Print(Expression<'a>), // "print" expression ";"
-}
-
-#[derive(Debug, Clone)]
-pub enum Expression<'a> {
-    Binary(Box<Expression<'a>>, &'a Token, Box<Expression<'a>>),
-    Unary(&'a Token, Box<Expression<'a>>),
-    Literal(&'a Token),
-    Grouping(Box<Expression<'a>>),
-}
+use crate::{program::ASTNode, Error};
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
+    pub ast: Vec<ASTNode<'a>>,
+    pub errors: Vec<Error>,
     pub tokens: Vec<Token>,
-    pub statements: Vec<Statement<'a>>,
-    pub line_offsets: Vec<usize>,
-    current_token_index: Cell<usize>,
+    current_token_idx: usize,
 }
 
-//pub struct StatementResult<'a>(pub Result<Statement<'a>>);
-
-impl Display for Statement<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Statement::Literal(expr) => write!(f, "{expr}"),
-            Statement::Expr(expr) => write!(f, "{expr};"),
-            Statement::Print(expr) => write!(f, "print {expr};"),
-        }
-    }
+#[derive(Debug)]
+pub struct Expression {
+    pub node_type: ExprNodeType,
+    pub main_token: Token, // PERF: Use &'a Token instead as we dont want a copy of the token.
+    pub lhs: Option<NodeId>,
+    pub rhs: Option<NodeId>,
 }
 
-//impl Default for StatementResult<'_> {
-//    fn default() -> Self {
-//        StatementResult(Ok(Statement::Literal(Expression::Literal(&Token {
-//            token_type: TokenType::EOF,
-//            line_number: 0,
-//            column_number: 0,
-//        }))))
+//#[derive(Debug)]
+//pub enum LiteralType {
+//    Int,
+//    Float,
+//    Bool,
+//    String,
+//}
+
+#[derive(Debug)]
+pub enum Statement {
+    ExprStatement(NodeId),
+    PrintStatement(NodeId),
+}
+
+#[derive(Debug)]
+pub enum ExprNodeType {
+    Root,
+    Binary,
+    Unary,
+    Grouping,
+    Literal,
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeId(usize);
+
+//impl<'a> Iterator for Parser<'a> {
+//    type Item = Result<ASTNode<'a>>;
+//
+//    fn next(&mut self) -> Option<Self::Item> {
+//        //self.program.tokens.get(self.current_token_idx);
+//        //let current_token = self.get_token();
+//
+//        match self.get_token_type() {
+//            Some(TokenType::PRINT) => Some(self.parse_print_statement()),
+//            _ => None,
+//        }
 //    }
 //}
 
-impl Display for Expression<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expression::Binary(first, operator, second) => {
-                write!(f, "({} {} {})", operator.token_type, first, second)
-            }
-            Expression::Grouping(expr) => {
-                write!(f, "(group {})", expr)
-            }
-            Expression::Unary(prefix, expr) => {
-                write!(f, "({} {})", prefix.token_type, expr)
-            }
-            Expression::Literal(token) => write!(f, "{}", token.token_type),
+impl<'a> Parser<'a> {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+            ast: vec![],
+            errors: vec![],
+            current_token_idx: 0,
         }
     }
-}
 
-impl From<&mut Lexer<'_>> for Parser<'_> {
-    fn from(value: &mut Lexer<'_>) -> Self {
-        value.print_errors().then(|| std::process::exit(65));
+    // PERF: Use secondary lifetime to avoid cloning tokens
+    fn get_token(&mut self) -> Option<Token> {
+        self.tokens.get(self.current_token_idx).cloned()
+    }
 
-        let tokens = std::mem::take(&mut value.tokens);
-        let line_offsets = std::mem::take(&mut value.line_offsets);
+    // PERF: Try to avoid clone in token_type tho technically its cheap to do except for
+    // TokenType::STRING, IDENTIFIER, NUMBER_FLOAT, NUMBER_INT.
+    fn get_token_type(&mut self) -> Option<TokenType> {
+        self.tokens
+            .get(self.current_token_idx)
+            .map(|token| token.token_type.clone())
+    }
 
-        let lexed_tokens: Vec<Token> = tokens.into_iter().map(|result| result.unwrap()).collect();
+    fn read_token(&mut self) {
+        //let current_token_idx = self.current_token_idx.get();
+        //self.current_token_idx.set(current_token_idx + 1);
+        self.current_token_idx += 1;
+    }
+
+    pub fn parse(mut self) -> Self {
+        while let Some(current_token) = self.get_token() {
+            let declaration = match current_token.token_type {
+                TokenType::EOF => break,
+                _ => self
+                    .parse_statement()
+                    .map(|statement| ASTNode::Declaration(Declaration::Statement(statement))),
+            };
+
+            match declaration {
+                Ok(node) => self.ast.push(node),
+                Err(err) => self.errors.push(err),
+            }
+        }
 
         Self {
-            tokens: lexed_tokens,
-            line_offsets,
-            statements: vec![],
-            current_token_index: Cell::new(0),
+            ast: self.ast,
+            errors: self.errors,
+            tokens: self.tokens,
+            current_token_idx: 0,
         }
     }
-}
 
-impl Parser<'_> {
-    fn get_token(&self) -> Option<&Token> {
-        self.tokens.get(self.current_token_index.get())
-    }
-
-    fn read_token(&self) -> Option<&Token> {
-        let current_token_idx = self.current_token_index.get();
-        if current_token_idx < self.tokens.len() {
-            let current_token = self.tokens.get(current_token_idx);
-            self.current_token_index.set(current_token_idx + 1);
-            return current_token;
+    fn parse_statement(&mut self) -> Result<Statement> {
+        match self.get_token_type() {
+            Some(TokenType::PRINT) => self.parse_print_statement().map(Statement::PrintStatement),
+            //_ => self.parse_expr_statement(),
+            _ => todo!(),
         }
-        None
+    }
+    //
+
+    fn parse_print_statement(&mut self) -> Result<NodeId> {
+        self.read_token(); // Skip "print"
+        self.parse_expr_statement()
     }
 
-    pub fn parse(&self) -> Result<Statement<'_>> {
-        self.parse_expr()
-            .map(|expr| Ok(Statement::Literal(*expr)))?
-    }
+    fn parse_expr_statement(&mut self) -> Result<NodeId> {
+        let expr_node = self.parse_expr();
 
-    pub fn parse_print_statement(&self) -> Result<Statement<'_>> {
-        match self.get_token() {
-            Some(first_token) if first_token.token_type == TokenType::PRINT => {
-                let _ = self.read_token();
-                let expr_statement = self.parse_expr_statement()?;
-                Ok(Statement::Print(*expr_statement))
+        match self.get_token_type() {
+            Some(TokenType::SEMICOLON) => {
+                self.read_token();
+                expr_node
             }
-            _ => {
-                let expr_statement = self.parse_expr_statement()?;
-                Ok(Statement::Expr(*expr_statement))
-            }
-        }
-    }
-
-    pub fn parse_expr_statement(&self) -> Result<Box<Expression>> {
-        let expr = self.parse_expr()?;
-        let next_token = self.read_token();
-        match next_token {
-            Some(semi_colon) if semi_colon.token_type == TokenType::SEMICOLON => Ok(expr),
             _ => Err(Error::MissingSemiColon),
         }
     }
 
-    fn parse_expr(&self) -> Result<Box<Expression>> {
-        let mut node = self.parse_comparison()?;
-        loop {
-            match self.get_token() {
-                Some(token)
-                    if matches!(
-                        token.token_type,
-                        TokenType::EQUAL_EQUAL | TokenType::BANG_EQUAL
-                    ) =>
-                {
-                    let _ = self.read_token();
+    fn parse_expr(&mut self) -> Result<NodeId> {
+        let mut comparison = self.parse_comparison()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::EQUAL_EQUAL | TokenType::BANG_EQUAL => {
+                    self.read_token();
                     let rhs = self.parse_comparison()?;
-                    node = Box::new(Expression::Binary(node, token, rhs));
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(comparison.clone()),
+                        rhs: Some(rhs),
+                    }));
+
+                    comparison = NodeId(self.ast.len() - 1);
                 }
                 _ => {
                     break;
                 }
             }
         }
-        Ok(node)
+
+        Ok(comparison)
     }
 
-    fn parse_comparison(&self) -> Result<Box<Expression>> {
-        let mut node = self.parse_term()?;
-        loop {
-            match self.get_token() {
-                Some(token)
-                    if matches!(
-                        token.token_type,
-                        TokenType::LESS
-                            | TokenType::LESS_EQUAL
-                            | TokenType::GREATER
-                            | TokenType::GREATER_EQUAL
-                    ) =>
-                {
-                    let _ = self.read_token();
+    fn parse_comparison(&mut self) -> Result<NodeId> {
+        let mut term = self.parse_term()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::LESS
+                | TokenType::LESS_EQUAL
+                | TokenType::GREATER
+                | TokenType::GREATER_EQUAL => {
+                    self.read_token();
                     let rhs = self.parse_term()?;
-                    node = Box::new(Expression::Binary(node, token, rhs));
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(term),
+                        rhs: Some(rhs),
+                    }));
+                    term = NodeId(self.ast.len() - 1)
                 }
                 _ => {
                     break;
                 }
             }
         }
-        Ok(node)
+
+        Ok(term)
     }
 
-    fn parse_term(&self) -> Result<Box<Expression>> {
-        let mut node = self.parse_factor()?;
-        loop {
-            match self.get_token() {
-                Some(token) if matches!(token.token_type, TokenType::PLUS | TokenType::MINUS) => {
-                    let _ = self.read_token();
+    fn parse_term(&mut self) -> Result<NodeId> {
+        let mut factor = self.parse_factor()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::PLUS | TokenType::MINUS => {
+                    self.read_token();
                     let rhs = self.parse_factor()?;
-                    node = Box::new(Expression::Binary(node, token, rhs));
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(factor),
+                        rhs: Some(rhs),
+                    }));
+                    factor = NodeId(self.ast.len() - 1);
                 }
                 _ => {
                     break;
                 }
             }
         }
-        Ok(node)
-    }
 
-    fn parse_factor(&self) -> Result<Box<Expression>> {
-        let mut node = self.parse_unary()?;
-        loop {
-            match self.get_token() {
-                Some(token) if matches!(token.token_type, TokenType::STAR | TokenType::SLASH) => {
-                    let _ = self.read_token();
+        Ok(factor)
+    }
+    //
+    fn parse_factor(&mut self) -> Result<NodeId> {
+        let mut unary = self.parse_unary()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::STAR | TokenType::SLASH => {
+                    self.read_token();
                     let rhs = self.parse_unary()?;
-                    node = Box::new(Expression::Binary(node, token, rhs))
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(unary),
+                        rhs: Some(rhs),
+                    }));
+                    unary = NodeId(self.ast.len() - 1);
                 }
                 _ => {
                     break;
                 }
             }
         }
-        Ok(node)
-    }
 
-    fn parse_unary(&self) -> Result<Box<Expression>> {
+        Ok(unary)
+    }
+    //
+    fn parse_unary(&mut self) -> Result<NodeId> {
         match self.get_token() {
             Some(token) if matches!(token.token_type, TokenType::BANG | TokenType::MINUS) => {
-                let _ = self.read_token();
+                self.read_token();
                 let primary = self.parse_unary()?;
-                Ok(Box::new(Expression::Unary(token, primary)))
+                self.ast.push(ASTNode::Expression(Expression {
+                    node_type: ExprNodeType::Unary,
+                    main_token: token,
+                    lhs: Some(primary),
+                    rhs: None,
+                }));
+
+                Ok(NodeId(self.ast.len() - 1))
             }
             _ => Ok(self.parse_primary()?),
         }
     }
 
-    fn parse_primary(&self) -> Result<Box<Expression>> {
-        let current_token = self.read_token().unwrap();
-        match current_token.token_type {
+    fn parse_primary(&mut self) -> Result<NodeId> {
+        let current_token = self.get_token().unwrap();
+        self.read_token();
+        let expression = match current_token.token_type {
             TokenType::LEFT_PAREN => {
                 let node = self.parse_expr()?;
-                let closing_paren = self.read_token();
-                if closing_paren.is_some_and(|token| token.token_type == TokenType::RIGHT_PAREN) {
-                    Ok(Box::new(Expression::Grouping(node)))
-                } else {
-                    Err(Error::SyntaxError {
+                self.read_token();
+                //let closing_paren = self.get_token();
+                match self.get_token() {
+                    Some(closing_paren) if closing_paren.token_type == TokenType::RIGHT_PAREN => {
+                        Ok(Expression {
+                            node_type: ExprNodeType::Grouping,
+                            main_token: closing_paren,
+                            lhs: Some(node),
+                            rhs: None,
+                        })
+                    }
+                    _ => Err(Error::SyntaxError {
                         line_number: current_token.start,
                         token: format!("{}", current_token.token_type),
-                    })
+                    }),
                 }
             }
             TokenType::STRING(_)
@@ -243,11 +286,19 @@ impl Parser<'_> {
             | TokenType::NUMBER_INT(_)
             | TokenType::TRUE
             | TokenType::FALSE
-            | TokenType::NIL => Ok(Box::new(Expression::Literal(current_token))),
+            | TokenType::NIL => Ok(Expression {
+                node_type: ExprNodeType::Literal,
+                main_token: current_token,
+                lhs: None,
+                rhs: None,
+            }),
             _ => Err(Error::SyntaxError {
                 line_number: current_token.start,
                 token: format!("{}", current_token.token_type),
             }),
-        }
+        };
+
+        self.ast.push(ASTNode::Expression(expression?));
+        Ok(NodeId(self.ast.len() - 1))
     }
 }
