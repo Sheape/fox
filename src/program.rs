@@ -19,12 +19,16 @@ pub struct Evaluated;
 pub struct Program<'a, State = None> {
     tokens: Vec<Token>,
     line_offsets: Vec<usize>,
-    errors: Vec<Error>,
-    ast: Vec<ASTNode<'a>>,
+    ast: AST<'a>,
     declarations: Vec<Declaration<'a>>,
     input: &'a [u8],
     _state: PhantomData<State>,
 }
+
+#[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug)]
+pub struct AST<'a>(pub Vec<ASTNode<'a>>);
 
 #[derive(Debug)]
 pub enum ASTNode<'a> {
@@ -45,7 +49,7 @@ pub enum Declaration<'a> {
         name: &'a Token,
         expression: Vec<&'a Expression>,
     },
-    Statement(Statement),
+    Statement(NodeId),
 }
 
 impl<'a> Program<'a, None> {
@@ -53,21 +57,19 @@ impl<'a> Program<'a, None> {
         Program {
             tokens: vec![],
             line_offsets: vec![],
-            errors: vec![],
-            ast: vec![],
+            ast: AST(vec![]),
             declarations: vec![],
             input: file_content.as_bytes(),
             _state: PhantomData,
         }
     }
 
-    pub fn lex(self) -> Program<'a, Lexed> {
-        let lexer = Lexer::new(self.input).tokenize();
-        dbg!(&lexer.tokens);
+    pub fn lex(self, debug: bool) -> Program<'a, Lexed> {
+        let lexer = Lexer::new(self.input).tokenize(debug);
+
         Program {
             tokens: lexer.tokens,
             line_offsets: lexer.line_offsets,
-            errors: lexer.errors,
             ast: self.ast,
             declarations: self.declarations,
             input: lexer.input,
@@ -79,17 +81,17 @@ impl<'a> Program<'a, None> {
 impl<'a> Program<'a, Lexed> {
     pub fn parse(self) -> Program<'a, Parsed> {
         let parser = Parser::new(self.tokens).parse();
-        dbg!(&parser.ast);
-        dbg!(&parser.errors);
-        Program {
+        let program = Program {
             tokens: parser.tokens,
             line_offsets: self.line_offsets,
-            errors: parser.errors,
-            ast: parser.ast,
+            ast: AST(parser.ast),
             declarations: self.declarations,
             input: self.input,
             _state: PhantomData,
-        }
+        };
+
+        println!("{}", program.ast);
+        program
     }
 }
 

@@ -31,10 +31,10 @@ fn main() {
 
     match command.as_str() {
         "tokenize" => {
-            Program::new(&file_contents).lex();
+            Program::new(&file_contents).lex(true);
         }
         "parse" => {
-            Program::new(&file_contents).lex().parse();
+            Program::new(&file_contents).lex(true).parse();
         }
         //"evaluate" => {
         //    let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {

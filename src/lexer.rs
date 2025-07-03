@@ -61,8 +61,8 @@ pub enum TokenType {
 #[derive(Debug)]
 pub struct Lexer<'a> {
     //program: &'a mut Program<'a, State>,
+    pub res_tokens: Vec<Result<Token>>,
     pub tokens: Vec<Token>,
-    pub errors: Vec<Error>,
     pub line_offsets: Vec<usize>,
     pub input: &'a [u8],
     offset: usize,
@@ -77,48 +77,45 @@ pub struct Token {
 #[derive(Debug)]
 pub struct TokenMetadata {
     pub start: usize,
-    pub end: usize,
+    pub length: usize,
     pub line_number: usize,
 }
 
 impl<'a> Lexer<'a> {
-    //pub fn print(&self) -> bool {
-    //    let mut has_error = false;
-    //    self.program.tokens.iter().for_each(|result| match result {
-    //        Ok(token) => println!("{token}"),
-    //        Err(err) => {
-    //            eprintln!("{err}");
-    //            has_error = true
-    //        }
-    //    });
-    //
-    //    has_error
-    //}
-    //
-    //pub fn print_errors(&self) -> bool {
-    //    let mut has_error = false;
-    //    self.program.tokens.iter().for_each(|result| match result {
-    //        Ok(_) => (),
-    //        Err(err) => {
-    //            eprintln!("{err}");
-    //            has_error = true
-    //        }
-    //    });
-    //
-    //    has_error
-    //}
+    fn print(&self) {
+        self.res_tokens.iter().for_each(|result| match result {
+            Ok(token) => println!("{token}"),
+            Err(err) => {
+                eprintln!("{err}");
+            }
+        });
+    }
+
+    fn tokens_only(&mut self) -> Vec<Token> {
+        let results = std::mem::take(&mut self.res_tokens);
+        results
+            .into_iter()
+            .map(|res_token| match res_token {
+                Ok(token) => token,
+                Err(_) => {
+                    std::process::exit(65);
+                }
+            })
+            .collect::<Vec<Token>>()
+    }
+
     pub fn new(input: &'a [u8]) -> Self {
         Self {
-            tokens: vec![],
-            errors: vec![],
+            res_tokens: vec![],
             line_offsets: vec![],
+            tokens: vec![],
             input,
             offset: 0,
         }
     }
 
     // TODO: 'a or not to 'a
-    pub fn tokenize(mut self) -> Self {
+    pub fn tokenize(mut self, debug: bool) -> Self {
         while self.offset < self.input.len() {
             let start = self.offset;
             let token_type: Result<TokenType> = match self.input[start] {
@@ -197,25 +194,25 @@ impl<'a> Lexer<'a> {
                     token: (self.input[start] as char).to_string(),
                 }),
             };
-            match token_type {
-                Ok(tok_type) => self.tokens.push(Token {
-                    token_type: tok_type,
-                    start,
-                }),
-                Err(err) => self.errors.push(err),
-            }
+
+            self.res_tokens
+                .push(token_type.map(|token_type| Token { token_type, start }));
 
             self.read_char();
         }
 
-        self.tokens.push(Token {
+        self.res_tokens.push(Ok(Token {
             token_type: TokenType::EOF,
             start: self.offset - 1,
-        });
+        }));
+
+        if debug {
+            self.print();
+        }
 
         Self {
-            tokens: self.tokens,
-            errors: self.errors,
+            res_tokens: vec![],
+            tokens: self.tokens_only(),
             line_offsets: self.line_offsets,
             input: self.input,
             offset: self.offset,
@@ -508,11 +505,9 @@ impl Token {
             TokenType::EOF => 1,
         };
 
-        let end = length - 1;
-
         TokenMetadata {
             start,
-            end,
+            length,
             line_number,
         }
     }
