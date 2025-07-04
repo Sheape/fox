@@ -32,8 +32,9 @@ pub struct Expression {
 
 #[derive(Debug)]
 pub enum Statement {
-    ExprStatement(NodeId),
-    PrintStatement(NodeId),
+    Expr(NodeId),
+    Print(NodeId),
+    Return(NodeId),
 }
 
 #[derive(Debug)]
@@ -112,13 +113,19 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<NodeId> {
         let statement = match self.get_token_type() {
-            Some(TokenType::PRINT) => self.parse_print_statement().map(Statement::PrintStatement),
+            Some(TokenType::PRINT) => self.parse_print_statement().map(Statement::Print),
+            Some(TokenType::RETURN) => self.parse_return_statement().map(Statement::Return),
             //_ => self.parse_expr_statement(),
             _ => todo!(),
         };
 
         self.ast.push(ASTNode::Statement(statement?));
         Ok(self.ast.len() - 1)
+    }
+
+    fn parse_return_statement(&mut self) -> Result<NodeId> {
+        self.read_token();
+        self.parse_expr_statement()
     }
 
     fn parse_print_statement(&mut self) -> Result<NodeId> {
@@ -322,11 +329,14 @@ impl<'a> AST<'a> {
                 Declaration::Statement(statement) => self.display(&self.0[*statement]),
             },
             ASTNode::Statement(statement) => match statement {
-                Statement::ExprStatement(node_id) => {
+                Statement::Expr(node_id) => {
                     format!("(expression {})", self.display(&self.0[*node_id]))
                 }
-                Statement::PrintStatement(node_id) => {
+                Statement::Print(node_id) => {
                     format!("(print {})", self.display(&self.0[*node_id]))
+                }
+                Statement::Return(node_id) => {
+                    format!("(return {})", self.display(&self.0[*node_id]))
                 }
             },
             ASTNode::Expression(expression) => match expression.node_type {
