@@ -4,7 +4,7 @@ use crate::{
     Result,
 };
 use crate::{program::ASTNode, Error};
-use std::fmt::{format, Debug, Display};
+use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -43,6 +43,12 @@ pub enum Statement {
         condition: NodeId,
         statement: NodeId,
         else_block: Option<NodeId>,
+    },
+    For {
+        initial: Option<NodeId>,
+        condition: Option<NodeId>,
+        after_expr: Option<NodeId>,
+        statement: NodeId,
     },
 }
 
@@ -116,7 +122,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_declaration(&mut self) {
+    fn parse_declaration(&mut self) -> Result<NodeId> {
         let ast_node = match self.get_token_type() {
             Some(TokenType::VAR) => self
                 .parse_var_declaration()
@@ -129,6 +135,8 @@ impl<'a> Parser<'a> {
             Ok(node) => self.ast.push(node),
             Err(err) => self.errors.push(err),
         }
+
+        Ok(self.ast.len() - 1)
     }
 
     fn parse_var_declaration(&mut self) -> Result<(String, Option<NodeId>)> {
@@ -172,6 +180,17 @@ impl<'a> Parser<'a> {
                         else_block,
                     })
             }
+            Some(TokenType::FOR) => {
+                self.parse_for_statement()
+                    .map(
+                        |(initial, condition, after_expr, statement)| Statement::For {
+                            initial,
+                            condition,
+                            after_expr,
+                            statement,
+                        },
+                    )
+            }
             _ => self.parse_expr_statement().map(Statement::Expr),
         };
 
@@ -205,21 +224,45 @@ impl<'a> Parser<'a> {
         Ok((condition, statement, else_block))
     }
 
-    //fn parse_for_statement(&mut self) -> Result<NodeId> {
-    //    self.read_token();
-    //    match self.get_token_type() {
-    //        Some(TokenType::LEFT_PAREN) => {
-    //            self.read_token();
-    //            match self.get_token_type() {
-    //                Some(TokenType::VAR) => self.parse_var_declaration(),
-    //                Some(TokenType::SEMICOLON) =>
-    //                _ => Error::MissingSemiColon
-    //            }
-    //        }
-    //        _ => Error::MissingLeftParen
-    //    }
-    //}
-    //
+    // TODO: Refactor this with a better return statement
+    fn parse_for_statement(
+        &mut self,
+    ) -> Result<(Option<NodeId>, Option<NodeId>, Option<NodeId>, NodeId)> {
+        self.read_token();
+        if self.get_token_type() == Some(TokenType::LEFT_PAREN) {
+            self.read_token();
+            let initial = match self.get_token_type() {
+                Some(TokenType::VAR) => Some(
+                    self.parse_declaration()?, // Guaranteed to be var declaration
+                ),
+                Some(TokenType::SEMICOLON) => {
+                    self.read_token();
+                    None
+                }
+                _ => Some(self.parse_expr_statement()?),
+            };
+
+            let condition = if self.get_token_type() != Some(TokenType::SEMICOLON) {
+                Some(self.parse_expr_statement()?)
+            } else {
+                self.read_token();
+                None
+            };
+
+            let after_expr = if self.get_token_type() != Some(TokenType::RIGHT_PAREN) {
+                Some(self.parse_expr()?)
+                // TODO: Handle error for missing ) after expr
+            } else {
+                None
+            };
+
+            self.read_token(); // reading )
+            Ok((initial, condition, after_expr, self.parse_statement()?))
+        } else {
+            Err(Error::MissingLeftParen)
+        }
+    }
+
     fn parse_while_statement(&mut self) -> Result<(NodeId, NodeId)> {
         self.read_token();
         let expr_node = match self.get_token_type() {
@@ -493,6 +536,38 @@ impl<'a> AST<'a> {
                         self.goto_node(statement)
                     ),
                 },
+                Statement::For {
+                    initial,
+                    condition,
+                    after_expr,
+                    statement,
+                } => {
+                    let initial_str = if let Some(initial_node) = initial {
+                        self.goto_node(initial_node)
+                    } else {
+                        "()".to_owned()
+                    };
+
+                    let condition_str = if let Some(condition_node) = condition {
+                        self.goto_node(condition_node)
+                    } else {
+                        "()".to_owned()
+                    };
+
+                    let after_expr_str = if let Some(expr_node) = after_expr {
+                        self.goto_node(expr_node)
+                    } else {
+                        "()".to_owned()
+                    };
+
+                    format!(
+                        "(for {} {} {} {})",
+                        initial_str,
+                        condition_str,
+                        after_expr_str,
+                        self.goto_node(statement)
+                    )
+                }
             },
             ASTNode::Expression(expression) => match expression.node_type {
                 ExprNodeType::Binary => {
