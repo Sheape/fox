@@ -4,7 +4,7 @@ use crate::{
     Result,
 };
 use crate::{program::ASTNode, Error};
-use std::fmt::{Debug, Display};
+use std::fmt::{format, Debug, Display};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -39,6 +39,11 @@ pub enum Statement {
         condition: NodeId,
         statement: NodeId,
     },
+    If {
+        condition: NodeId,
+        statement: NodeId,
+        else_block: Option<NodeId>,
+    },
 }
 
 #[derive(Debug)]
@@ -66,6 +71,7 @@ pub type NodeId = usize;
 //}
 
 impl<'a> Parser<'a> {
+    // region: Utility methods
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
             tokens,
@@ -88,16 +94,12 @@ impl<'a> Parser<'a> {
             .map(|token| token.token_type.clone())
     }
 
-    fn peek_token_type(&mut self) -> Option<TokenType> {
-        self.tokens
-            .get(self.current_token_idx + 1)
-            .map(|token| token.token_type.clone())
-    }
-
     fn read_token(&mut self) {
         self.current_token_idx += 1;
     }
+    // endregion
 
+    // region: Main parsing methodse
     pub fn parse(mut self) -> Self {
         while let Some(current_token_type) = self.get_token_type() {
             match current_token_type {
@@ -116,7 +118,9 @@ impl<'a> Parser<'a> {
 
     fn parse_declaration(&mut self) {
         let ast_node = match self.get_token_type() {
-            Some(TokenType::VAR) => self.parse_var_declaration(),
+            Some(TokenType::VAR) => self
+                .parse_var_declaration()
+                .map(|(name, expression)| Declaration::Variable { name, expression }),
             _ => self.parse_statement().map(Declaration::Statement),
         }
         .map(ASTNode::Declaration);
@@ -127,27 +131,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_declaration(&mut self) -> Result<Declaration<'a>> {
+    fn parse_var_declaration(&mut self) -> Result<(String, Option<NodeId>)> {
         self.read_token(); // reads "var"
         match self.get_token_type() {
             Some(TokenType::IDENTIFIER(name)) => {
-                match self.peek_token_type() {
+                self.read_token(); // reads identifier
+                match self.get_token_type() {
                     Some(TokenType::EQUAL) => {
-                        self.read_token(); // reads identifier
                         self.read_token(); // reads '='
                         self.parse_statement()
-                            .map(|expression| Declaration::Variable {
-                                name,
-                                expression: Some(expression),
-                            })
+                            .map(|expression| (name, Some(expression)))
                     }
                     Some(TokenType::SEMICOLON) => {
-                        self.read_token(); // reads identifier
                         self.read_token(); // reads semicolon
-                        Ok(Declaration::Variable {
-                            name,
-                            expression: None,
-                        })
+                        Ok((name, None))
                     }
                     _ => Err(Error::MissingSemiColon),
                 }
@@ -167,6 +164,14 @@ impl<'a> Parser<'a> {
                         statement,
                     })
             }
+            Some(TokenType::IF) => {
+                self.parse_if_statement()
+                    .map(|(condition, statement, else_block)| Statement::If {
+                        condition,
+                        statement,
+                        else_block,
+                    })
+            }
             _ => self.parse_expr_statement().map(Statement::Expr),
         };
 
@@ -174,6 +179,47 @@ impl<'a> Parser<'a> {
         Ok(self.ast.len() - 1)
     }
 
+    fn parse_if_statement(&mut self) -> Result<(NodeId, NodeId, Option<NodeId>)> {
+        let (condition, statement, else_block);
+
+        self.read_token();
+        if self.get_token_type() == Some(TokenType::LEFT_PAREN) {
+            self.read_token();
+            condition = self.parse_expr()?;
+            if self.get_token_type() == Some(TokenType::RIGHT_PAREN) {
+                self.read_token();
+                statement = self.parse_statement()?;
+                if self.get_token_type() == Some(TokenType::ELSE) {
+                    self.read_token();
+                    else_block = Some(self.parse_statement()?);
+                } else {
+                    else_block = None;
+                }
+            } else {
+                return Err(Error::MissingRightParen);
+            }
+        } else {
+            return Err(Error::MissingLeftParen);
+        }
+
+        Ok((condition, statement, else_block))
+    }
+
+    //fn parse_for_statement(&mut self) -> Result<NodeId> {
+    //    self.read_token();
+    //    match self.get_token_type() {
+    //        Some(TokenType::LEFT_PAREN) => {
+    //            self.read_token();
+    //            match self.get_token_type() {
+    //                Some(TokenType::VAR) => self.parse_var_declaration(),
+    //                Some(TokenType::SEMICOLON) =>
+    //                _ => Error::MissingSemiColon
+    //            }
+    //        }
+    //        _ => Error::MissingLeftParen
+    //    }
+    //}
+    //
     fn parse_while_statement(&mut self) -> Result<(NodeId, NodeId)> {
         self.read_token();
         let expr_node = match self.get_token_type() {
@@ -182,7 +228,7 @@ impl<'a> Parser<'a> {
                 self.parse_expr()
             }
             _ => Err(Error::MissingLeftParen),
-        }?;
+        };
 
         let statement_node = match self.get_token_type() {
             Some(TokenType::RIGHT_PAREN) => {
@@ -190,9 +236,9 @@ impl<'a> Parser<'a> {
                 self.parse_statement()
             }
             _ => Err(Error::MissingRightParen),
-        }?;
+        };
 
-        Ok((expr_node, statement_node))
+        Ok((expr_node?, statement_node?))
     }
 
     fn parse_return_statement(&mut self) -> Result<NodeId> {
@@ -216,7 +262,9 @@ impl<'a> Parser<'a> {
             _ => Err(Error::MissingSemiColon),
         }
     }
+    // endregion
 
+    // region: Recursive descent parsing for expr
     fn parse_expr(&mut self) -> Result<NodeId> {
         let mut comparison = self.parse_comparison()?;
         while let Some(current_token) = self.get_token() {
@@ -378,6 +426,7 @@ impl<'a> Parser<'a> {
         self.ast.push(ASTNode::Expression(expression?));
         Ok(self.ast.len() - 1)
     }
+    // endregion
 }
 
 //impl Display for Vec<ASTNode<'_>> {
@@ -387,6 +436,10 @@ impl<'a> Parser<'a> {
 //}
 
 impl<'a> AST<'a> {
+    fn goto_node(&self, node_id: &NodeId) -> String {
+        self.display(&self.0[*node_id])
+    }
+
     // We implement our own display method instead of impl Display because we still need access to AST.
     fn display(&self, node: &ASTNode<'a>) -> String {
         match node {
@@ -398,20 +451,20 @@ impl<'a> AST<'a> {
                 } => todo!(),
                 Declaration::Function(function) => todo!(),
                 Declaration::Variable { name, expression } => match expression {
-                    Some(expr) => format!("(var {name} {})", self.display(&self.0[*expr])),
+                    Some(expr) => format!("(var {name} {})", self.goto_node(expr)),
                     None => format!("(var {name})"),
                 },
-                Declaration::Statement(statement) => self.display(&self.0[*statement]),
+                Declaration::Statement(statement) => self.goto_node(statement),
             },
             ASTNode::Statement(statement) => match statement {
                 Statement::Expr(node_id) => {
-                    format!("(expression {})", self.display(&self.0[*node_id]))
+                    format!("(expression {})", self.goto_node(node_id))
                 }
                 Statement::Print(node_id) => {
-                    format!("(print {})", self.display(&self.0[*node_id]))
+                    format!("(print {})", self.goto_node(node_id))
                 }
                 Statement::Return(node_id) => {
-                    format!("(return {})", self.display(&self.0[*node_id]))
+                    format!("(return {})", self.goto_node(node_id))
                 }
                 Statement::While {
                     condition,
@@ -419,23 +472,40 @@ impl<'a> AST<'a> {
                 } => {
                     format!(
                         "(while {} {})",
-                        self.display(&self.0[*condition]),
-                        self.display(&self.0[*statement])
+                        self.goto_node(condition),
+                        self.goto_node(statement)
                     )
                 }
+                Statement::If {
+                    condition,
+                    statement,
+                    else_block,
+                } => match else_block {
+                    Some(else_node) => format!(
+                        "(if ({}) {} {})",
+                        self.goto_node(condition),
+                        self.goto_node(statement),
+                        self.goto_node(else_node)
+                    ),
+                    None => format!(
+                        "(if ({}) {})",
+                        self.goto_node(condition),
+                        self.goto_node(statement)
+                    ),
+                },
             },
             ASTNode::Expression(expression) => match expression.node_type {
                 ExprNodeType::Binary => {
-                    let lhs = self.display(&self.0[expression.lhs.unwrap()]);
-                    let rhs = self.display(&self.0[expression.rhs.unwrap()]);
+                    let lhs = self.goto_node(&expression.lhs.unwrap());
+                    let rhs = self.goto_node(&expression.rhs.unwrap());
                     format!("({} {lhs} {rhs})", expression.main_token.token_type)
                 }
                 ExprNodeType::Unary => {
-                    let unary = self.display(&self.0[expression.lhs.unwrap()]);
+                    let unary = self.goto_node(&expression.lhs.unwrap());
                     format!("({} {unary})", expression.main_token.token_type)
                 }
                 ExprNodeType::Grouping => {
-                    format!("(group {})", self.display(&self.0[expression.lhs.unwrap()]))
+                    format!("(group {})", self.goto_node(&expression.lhs.unwrap()))
                 }
                 ExprNodeType::Literal => format!("{}", expression.main_token.token_type),
             },
