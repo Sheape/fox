@@ -35,6 +35,10 @@ pub enum Statement {
     Expr(NodeId),
     Print(NodeId),
     Return(NodeId),
+    While {
+        condition: NodeId,
+        statement: NodeId,
+    },
 }
 
 #[derive(Debug)]
@@ -89,18 +93,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(mut self) -> Self {
-        while let Some(current_token) = self.get_token() {
-            let declaration = match current_token.token_type {
+        while let Some(current_token_type) = self.get_token_type() {
+            match current_token_type {
                 TokenType::EOF => break,
-                _ => self
-                    .parse_statement()
-                    .map(|statement| ASTNode::Declaration(Declaration::Statement(statement))),
+                _ => self.parse_declaration(),
             };
-
-            match declaration {
-                Ok(node) => self.ast.push(node),
-                Err(err) => self.errors.push(err),
-            }
         }
 
         Self {
@@ -111,26 +108,66 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_declaration(&mut self) {
+        let declaration = match self.get_token_type() {
+            _ => self
+                .parse_statement()
+                .map(|statement| ASTNode::Declaration(Declaration::Statement(statement))),
+        };
+
+        match declaration {
+            Ok(node) => self.ast.push(node),
+            Err(err) => self.errors.push(err),
+        }
+    }
+
     fn parse_statement(&mut self) -> Result<NodeId> {
         let statement = match self.get_token_type() {
             Some(TokenType::PRINT) => self.parse_print_statement().map(Statement::Print),
             Some(TokenType::RETURN) => self.parse_return_statement().map(Statement::Return),
-            //_ => self.parse_expr_statement(),
-            _ => todo!(),
+            Some(TokenType::WHILE) => {
+                self.parse_while_statement()
+                    .map(|(condition, statement)| Statement::While {
+                        condition,
+                        statement,
+                    })
+            }
+            _ => self.parse_expr_statement().map(Statement::Expr),
         };
 
         self.ast.push(ASTNode::Statement(statement?));
         Ok(self.ast.len() - 1)
     }
 
+    fn parse_while_statement(&mut self) -> Result<(NodeId, NodeId)> {
+        self.read_token();
+        let expr_node = match self.get_token_type() {
+            Some(TokenType::LEFT_PAREN) => {
+                self.read_token();
+                self.parse_expr()
+            }
+            _ => Err(Error::MissingLeftParen),
+        }?;
+
+        let statement_node = match self.get_token_type() {
+            Some(TokenType::RIGHT_PAREN) => {
+                self.read_token();
+                self.parse_statement()
+            }
+            _ => Err(Error::MissingRightParen),
+        }?;
+
+        Ok((expr_node, statement_node))
+    }
+
     fn parse_return_statement(&mut self) -> Result<NodeId> {
         self.read_token();
-        self.parse_expr_statement()
+        self.parse_statement()
     }
 
     fn parse_print_statement(&mut self) -> Result<NodeId> {
         self.read_token(); // Skip "print"
-        self.parse_expr_statement()
+        self.parse_statement()
     }
 
     fn parse_expr_statement(&mut self) -> Result<NodeId> {
@@ -155,7 +192,7 @@ impl<'a> Parser<'a> {
                     self.ast.push(ASTNode::Expression(Expression {
                         node_type: ExprNodeType::Binary,
                         main_token: current_token,
-                        lhs: Some(comparison.clone()),
+                        lhs: Some(comparison),
                         rhs: Some(rhs),
                     }));
 
@@ -338,10 +375,19 @@ impl<'a> AST<'a> {
                 Statement::Return(node_id) => {
                     format!("(return {})", self.display(&self.0[*node_id]))
                 }
+                Statement::While {
+                    condition,
+                    statement,
+                } => {
+                    format!(
+                        "(while {} {})",
+                        self.display(&self.0[*condition]),
+                        self.display(&self.0[*statement])
+                    )
+                }
             },
             ASTNode::Expression(expression) => match expression.node_type {
                 ExprNodeType::Binary => {
-                    // Its okay to clone here because we're just displaying the parsed debug info.
                     let lhs = self.display(&self.0[expression.lhs.unwrap()]);
                     let rhs = self.display(&self.0[expression.rhs.unwrap()]);
                     format!("({} {lhs} {rhs})", expression.main_token.token_type)
