@@ -46,8 +46,8 @@ pub enum Declaration<'a> {
     },
     Function(&'a Function<'a>),
     Variable {
-        name: &'a Token,
-        expression: Vec<&'a Expression>,
+        name: String,
+        expression: Option<NodeId>,
     },
     Statement(NodeId),
 }

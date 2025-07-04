@@ -88,6 +88,12 @@ impl<'a> Parser<'a> {
             .map(|token| token.token_type.clone())
     }
 
+    fn peek_token_type(&mut self) -> Option<TokenType> {
+        self.tokens
+            .get(self.current_token_idx + 1)
+            .map(|token| token.token_type.clone())
+    }
+
     fn read_token(&mut self) {
         self.current_token_idx += 1;
     }
@@ -109,15 +115,44 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) {
-        let declaration = match self.get_token_type() {
-            _ => self
-                .parse_statement()
-                .map(|statement| ASTNode::Declaration(Declaration::Statement(statement))),
-        };
+        let ast_node = match self.get_token_type() {
+            Some(TokenType::VAR) => self.parse_var_declaration(),
+            _ => self.parse_statement().map(Declaration::Statement),
+        }
+        .map(ASTNode::Declaration);
 
-        match declaration {
+        match ast_node {
             Ok(node) => self.ast.push(node),
             Err(err) => self.errors.push(err),
+        }
+    }
+
+    fn parse_var_declaration(&mut self) -> Result<Declaration<'a>> {
+        self.read_token(); // reads "var"
+        match self.get_token_type() {
+            Some(TokenType::IDENTIFIER(name)) => {
+                match self.peek_token_type() {
+                    Some(TokenType::EQUAL) => {
+                        self.read_token(); // reads identifier
+                        self.read_token(); // reads '='
+                        self.parse_statement()
+                            .map(|expression| Declaration::Variable {
+                                name,
+                                expression: Some(expression),
+                            })
+                    }
+                    Some(TokenType::SEMICOLON) => {
+                        self.read_token(); // reads identifier
+                        self.read_token(); // reads semicolon
+                        Ok(Declaration::Variable {
+                            name,
+                            expression: None,
+                        })
+                    }
+                    _ => Err(Error::MissingSemiColon),
+                }
+            }
+            _ => Err(Error::IdentifierExpected),
         }
     }
 
@@ -362,7 +397,10 @@ impl<'a> AST<'a> {
                     methods,
                 } => todo!(),
                 Declaration::Function(function) => todo!(),
-                Declaration::Variable { name, expression } => todo!(),
+                Declaration::Variable { name, expression } => match expression {
+                    Some(expr) => format!("(var {name} {})", self.display(&self.0[*expr])),
+                    None => format!("(var {name})"),
+                },
                 Declaration::Statement(statement) => self.display(&self.0[*statement]),
             },
             ASTNode::Statement(statement) => match statement {

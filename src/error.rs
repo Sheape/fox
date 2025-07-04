@@ -1,4 +1,4 @@
-use crate::lexer::TokenType;
+//use crate::lexer::TokenType;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -14,7 +14,10 @@ pub enum Error {
 
     // TODO: add line numbers later
     ExpressionExpected,
+    IdentifierExpected,
     MissingSemiColon,
+    MissingLeftParen,
+    MissingRightParen,
     // Eval Errors
     //InvalidOperandError { left: Value, right: Value },
     //CannotDivideByZeroError { left: Value },
@@ -50,6 +53,19 @@ impl std::fmt::Display for Error {
             }
             Error::MissingSemiColon => {
                 format!("[line <fix this later>] Error: Missing semi-colon.")
+            }
+            Error::MissingLeftParen => {
+                format!(
+                    "[line <fix this later>] Error: Missing left parenthesis '(' at <location>."
+                )
+            }
+            Error::MissingRightParen => {
+                format!(
+                    "[line <fix this later>] Error: Missing right parenthesis ')' at <location>."
+                )
+            }
+            Error::IdentifierExpected => {
+                format!("[line <fix this later>] Error: Expected expression.")
             }
             Error::ExpressionExpected => {
                 format!("[line <fix this later>] Error: Expected expression.")
