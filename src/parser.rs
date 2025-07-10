@@ -65,7 +65,7 @@ pub enum ExprNodeType {
     Binary,
     Unary,
     Grouping,
-    //Super,
+    Super,
     Literal,
 }
 
@@ -486,21 +486,24 @@ impl<'a> Parser<'a> {
                     }),
                 }
             }
-            //TokenType::SUPER => {
-            //    if self.get_token_type() == Some(TokenType::DOT) {
-            //        self.read_token();
-            //        if let Some(TokenType::IDENTIFIER(_)) = self.get_token_type() {
-            //            Ok(Expression {
-            //                node_type: (),
-            //                main_token: (),
-            //                lhs: (),
-            //                rhs: (),
-            //            })
-            //        }
-            //    } else {
-            //        Err(Error::MissingDot)
-            //    }
-            //}
+            TokenType::SUPER => {
+                if self.get_token_type() == Some(TokenType::DOT) {
+                    self.read_token();
+                    if let Some(TokenType::IDENTIFIER(_)) = self.get_token_type() {
+                        let identifier_node = self.parse_primary()?;
+                        Ok(Expression {
+                            node_type: ExprNodeType::Super,
+                            main_token: current_token,
+                            lhs: Some(identifier_node),
+                            rhs: None,
+                        })
+                    } else {
+                        Err(Error::IdentifierExpected)
+                    }
+                } else {
+                    Err(Error::MissingDot)
+                }
+            }
             TokenType::STRING(_)
             | TokenType::NUMBER_FLOAT(_, _)
             | TokenType::NUMBER_INT(_)
@@ -731,6 +734,9 @@ impl<'a> AST<'a> {
                     format!("(group {})", self.goto_node(&expression.lhs.unwrap()))
                 }
                 ExprNodeType::Literal => format!("{}", expression.main_token.token_type),
+                ExprNodeType::Super => {
+                    format!("(super {})", self.goto_node(&expression.lhs.unwrap()))
+                }
             },
         }
     }
