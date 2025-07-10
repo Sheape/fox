@@ -13,7 +13,7 @@ pub struct Lexed;
 #[derive(Debug)]
 pub struct Parsed;
 #[derive(Debug)]
-pub struct Evaluated;
+pub struct Compiled;
 
 #[derive(Debug)]
 pub struct Program<'a, State = None> {
@@ -28,7 +28,10 @@ pub struct Program<'a, State = None> {
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
-pub struct AST<'a>(pub Vec<ASTNode<'a>>);
+pub struct AST<'a> {
+    pub nodes: Vec<ASTNode<'a>>,
+    pub block_arena: Vec<usize>,
+}
 
 #[derive(Debug)]
 pub enum ASTNode<'a> {
@@ -57,7 +60,10 @@ impl<'a> Program<'a, None> {
         Program {
             tokens: vec![],
             line_offsets: vec![],
-            ast: AST(vec![]),
+            ast: AST {
+                nodes: vec![],
+                block_arena: vec![],
+            },
             declarations: vec![],
             input: file_content.as_bytes(),
             _state: PhantomData,
@@ -81,10 +87,16 @@ impl<'a> Program<'a, None> {
 impl<'a> Program<'a, Lexed> {
     pub fn parse(self) -> Program<'a, Parsed> {
         let parser = Parser::new(self.tokens).parse();
+        dbg!(&parser.ast);
+        dbg!(&parser.errors);
+        dbg!(&parser.block_arena);
         let program = Program {
             tokens: parser.tokens,
             line_offsets: self.line_offsets,
-            ast: AST(parser.ast),
+            ast: AST {
+                nodes: parser.ast,
+                block_arena: parser.block_arena,
+            },
             declarations: self.declarations,
             input: self.input,
             _state: PhantomData,
@@ -96,7 +108,7 @@ impl<'a> Program<'a, Lexed> {
 }
 
 impl<'a> Program<'a, Parsed> {
-    pub fn evaluate(self) -> Program<'a, Evaluated> {
+    pub fn compile(self) -> Program<'a, Compiled> {
         todo!()
     }
 }

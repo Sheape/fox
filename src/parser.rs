@@ -4,11 +4,15 @@ use crate::{
     Result,
 };
 use crate::{program::ASTNode, Error};
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    usize,
+};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     pub ast: Vec<ASTNode<'a>>,
+    pub block_arena: Vec<usize>,
     pub errors: Vec<Error>,
     pub tokens: Vec<Token>,
     current_token_idx: usize,
@@ -51,8 +55,8 @@ pub enum Statement {
         statement: NodeId,
     },
     Block {
-        start: NodeId,
-        length: usize, // 0 for an empty block
+        start: Option<NodeId>, // None for having no declarations
+        length: usize,         // 0 for an empty block
     },
 }
 
@@ -87,6 +91,7 @@ impl<'a> Parser<'a> {
         Self {
             tokens,
             ast: vec![],
+            block_arena: vec![],
             errors: vec![],
             current_token_idx: 0,
         }
@@ -123,6 +128,7 @@ impl<'a> Parser<'a> {
 
         Self {
             ast: self.ast,
+            block_arena: self.block_arena,
             errors: self.errors,
             tokens: self.tokens,
             current_token_idx: 0,
@@ -198,6 +204,9 @@ impl<'a> Parser<'a> {
                         },
                     )
             }
+            Some(TokenType::LEFT_BRACE) => self
+                .parse_block_statement()
+                .map(|(start, length)| Statement::Block { start, length }),
             _ => self.parse_expr_statement().map(Statement::Expr),
         };
 
@@ -289,6 +298,25 @@ impl<'a> Parser<'a> {
         };
 
         Ok((expr_node?, statement_node?))
+    }
+
+    fn parse_block_statement(&mut self) -> Result<(Option<NodeId>, usize)> {
+        self.read_token(); // Reads '{'
+        let mut length = 0usize;
+        let mut start = None; // This should never be mutated.
+        while self.get_token_type() != Some(TokenType::RIGHT_BRACE) {
+            let declaration_index = self.parse_declaration()?;
+            self.block_arena.push(declaration_index);
+
+            if length == 0 {
+                start = Some(self.block_arena.len() - 1);
+            }
+
+            length += 1;
+        }
+        self.read_token(); // Reads '}'
+
+        Ok((start, length))
     }
 
     fn parse_return_statement(&mut self) -> Result<NodeId> {
@@ -506,12 +534,12 @@ impl<'a> Parser<'a> {
 
 impl<'a> AST<'a> {
     fn goto_node(&self, node_id: &NodeId) -> String {
-        self.display(&self.0[*node_id])
+        self.display(&self.nodes[*node_id], &self.block_arena)
     }
 
     fn filter_root_nodes(&self) -> Vec<NodeId> {
-        let mut referenced = vec![false; self.0.len()];
-        for (idx, node) in self.0.iter().enumerate() {
+        let mut referenced = vec![false; self.nodes.len()];
+        for (idx, node) in self.nodes.iter().enumerate() {
             match node {
                 ASTNode::Declaration(declaration) => match declaration {
                     Declaration::Class {
@@ -569,7 +597,15 @@ impl<'a> AST<'a> {
                         }
                         referenced[*statement] = true;
                     }
-                    Statement::Block { start, length } => todo!(),
+                    Statement::Block { start, length } => {
+                        if let Some(start) = start {
+                            for i in &self.block_arena[*start..*start + *length] {
+                                referenced[*i] = true;
+                            }
+                        } else {
+                            referenced[idx] = true;
+                        }
+                    }
                 },
                 _ => referenced[idx] = true,
             }
@@ -583,7 +619,7 @@ impl<'a> AST<'a> {
     }
 
     // We implement our own display method instead of impl Display because we still need access to AST.
-    fn display(&self, node: &ASTNode<'a>) -> String {
+    fn display(&self, node: &ASTNode<'a>, block_arena: &[usize]) -> String {
         match node {
             ASTNode::Declaration(declaration) => match declaration {
                 Declaration::Class {
@@ -668,7 +704,17 @@ impl<'a> AST<'a> {
                     )
                 }
                 Statement::Block { start, length } => {
-                    format!("(block)")
+                    let mut block = String::from("(block ");
+                    if let Some(start) = start {
+                        // Guaranteed to have start_idx
+                        for idx in &block_arena[*start..*start + *length] {
+                            block.push_str(self.goto_node(idx).as_str());
+                        }
+                        block.push(')');
+                        block
+                    } else {
+                        String::from("(block)")
+                    }
                 }
             },
             ASTNode::Expression(expression) => match expression.node_type {
@@ -695,7 +741,7 @@ impl Display for AST<'_> {
         let parsed = self
             .filter_root_nodes()
             .iter()
-            .map(|index| self.display(&self.0[*index]))
+            .map(|index| self.display(&self.nodes[*index], &self.block_arena))
             .reduce(|acc, e| {
                 if !e.is_empty() {
                     format!("{acc}\n{e}")
