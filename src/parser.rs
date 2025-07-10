@@ -50,6 +50,10 @@ pub enum Statement {
         after_expr: Option<NodeId>,
         statement: NodeId,
     },
+    Block {
+        start: NodeId,
+        length: usize, // 0 for an empty block
+    },
 }
 
 #[derive(Debug)]
@@ -57,6 +61,7 @@ pub enum ExprNodeType {
     Binary,
     Unary,
     Grouping,
+    //Super,
     Literal,
 }
 
@@ -104,11 +109,13 @@ impl<'a> Parser<'a> {
         self.current_token_idx += 1;
     }
     // endregion
+}
 
+impl<'a> Parser<'a> {
     // region: Main parsing methodse
     pub fn parse(mut self) -> Self {
         while let Some(current_token_type) = self.get_token_type() {
-            match current_token_type {
+            let _ = match current_token_type {
                 TokenType::EOF => break,
                 _ => self.parse_declaration(),
             };
@@ -306,7 +313,9 @@ impl<'a> Parser<'a> {
         }
     }
     // endregion
+}
 
+impl<'a> Parser<'a> {
     // region: Recursive descent parsing for expr
     fn parse_expr(&mut self) -> Result<NodeId> {
         let mut comparison = self.parse_comparison()?;
@@ -449,9 +458,26 @@ impl<'a> Parser<'a> {
                     }),
                 }
             }
+            //TokenType::SUPER => {
+            //    if self.get_token_type() == Some(TokenType::DOT) {
+            //        self.read_token();
+            //        if let Some(TokenType::IDENTIFIER(_)) = self.get_token_type() {
+            //            Ok(Expression {
+            //                node_type: (),
+            //                main_token: (),
+            //                lhs: (),
+            //                rhs: (),
+            //            })
+            //        }
+            //    } else {
+            //        Err(Error::MissingDot)
+            //    }
+            //}
             TokenType::STRING(_)
             | TokenType::NUMBER_FLOAT(_, _)
             | TokenType::NUMBER_INT(_)
+            | TokenType::IDENTIFIER(_)
+            | TokenType::THIS
             | TokenType::TRUE
             | TokenType::FALSE
             | TokenType::NIL => Ok(Expression {
@@ -481,6 +507,79 @@ impl<'a> Parser<'a> {
 impl<'a> AST<'a> {
     fn goto_node(&self, node_id: &NodeId) -> String {
         self.display(&self.0[*node_id])
+    }
+
+    fn filter_root_nodes(&self) -> Vec<NodeId> {
+        let mut referenced = vec![false; self.0.len()];
+        for (idx, node) in self.0.iter().enumerate() {
+            match node {
+                ASTNode::Declaration(declaration) => match declaration {
+                    Declaration::Class {
+                        name,
+                        inherited_class,
+                        methods,
+                    } => todo!(),
+                    Declaration::Function(function) => todo!(),
+                    Declaration::Variable {
+                        name: _,
+                        expression,
+                    } => {
+                        if let Some(expr_idx) = expression {
+                            referenced[*expr_idx] = true;
+                        }
+                    }
+                    Declaration::Statement(statement_idx) => referenced[*statement_idx] = true,
+                },
+                ASTNode::Statement(statement) => match statement {
+                    Statement::Expr(expr_idx) => referenced[*expr_idx] = true,
+                    Statement::Print(statement_idx) => referenced[*statement_idx] = true,
+                    Statement::Return(statement_idx) => referenced[*statement_idx] = true,
+                    Statement::While {
+                        condition,
+                        statement,
+                    } => {
+                        referenced[*condition] = true;
+                        referenced[*statement] = true;
+                    }
+                    Statement::If {
+                        condition,
+                        statement,
+                        else_block,
+                    } => {
+                        referenced[*condition] = true;
+                        referenced[*statement] = true;
+                        if let Some(else_index) = else_block {
+                            referenced[*else_index] = true
+                        }
+                    }
+                    Statement::For {
+                        initial,
+                        condition,
+                        after_expr,
+                        statement,
+                    } => {
+                        if let Some(initial_idx) = initial {
+                            referenced[*initial_idx] = true;
+                        }
+                        if let Some(condition_idx) = condition {
+                            referenced[*condition_idx] = true;
+                        }
+                        if let Some(after_expr_idx) = after_expr {
+                            referenced[*after_expr_idx] = true;
+                        }
+                        referenced[*statement] = true;
+                    }
+                    Statement::Block { start, length } => todo!(),
+                },
+                _ => referenced[idx] = true,
+            }
+        }
+
+        referenced
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, is_ref)| if !*is_ref { Some(idx) } else { None })
+            .collect()
     }
 
     // We implement our own display method instead of impl Display because we still need access to AST.
@@ -568,6 +667,9 @@ impl<'a> AST<'a> {
                         self.goto_node(statement)
                     )
                 }
+                Statement::Block { start, length } => {
+                    format!("(block)")
+                }
             },
             ASTNode::Expression(expression) => match expression.node_type {
                 ExprNodeType::Binary => {
@@ -590,18 +692,17 @@ impl<'a> AST<'a> {
 
 impl Display for AST<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ast = &self.0;
-
-        let parsed = ast
+        let parsed = self
+            .filter_root_nodes()
             .iter()
-            .filter_map(|node| {
-                if let ASTNode::Declaration(_) = node {
-                    Some(self.display(node))
+            .map(|index| self.display(&self.0[*index]))
+            .reduce(|acc, e| {
+                if !e.is_empty() {
+                    format!("{acc}\n{e}")
                 } else {
-                    None
+                    String::from("")
                 }
             })
-            .reduce(|acc, e| format!("{acc}\n{e}"))
             .unwrap_or("".to_owned());
 
         write!(f, "{parsed}")

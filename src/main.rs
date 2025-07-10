@@ -7,6 +7,7 @@ mod function;
 mod lexer;
 mod parser;
 mod program;
+mod vm;
 
 pub use error::{Error, Result};
 //use lexer::Lexer;
@@ -25,7 +26,7 @@ fn main() {
     let filename = &args[2];
 
     let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
-        eprintln!("Failed to read file {}", filename);
+        eprintln!("Failed to read file {filename}");
         String::new()
     });
 
@@ -80,7 +81,7 @@ fn main() {
         //        }
         //    }
         _ => {
-            eprintln!("Unknown command: {}", command);
+            eprintln!("Unknown command: {command}");
         }
     }
 }
