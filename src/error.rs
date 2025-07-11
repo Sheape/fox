@@ -1,5 +1,7 @@
 //use crate::lexer::TokenType;
 
+use crate::{lexer::TokenType, vm::Value};
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
@@ -18,13 +20,16 @@ pub enum Error {
     MissingSemiColon,
     MissingLeftParen,
     MissingRightParen,
+    MissingIdentifier,
+    MissingDot,
+    NoAssignmentOnVariable,
     // Eval Errors
-    //InvalidOperandError { left: Value, right: Value },
-    //CannotDivideByZeroError { left: Value },
-    //InvalidBinaryOperatorError { left: Value, right: Value },
-    //InvalidLiteralError { token_type: TokenType },
-    //CannotApplyNegationError { value: Value },
-    //InvalidComparisonError { left: Value, right: Value },
+    InvalidOperandError { left: Value, right: Value },
+    CannotDivideByZeroError { left: Value },
+    InvalidBinaryOperatorError { left: Value, right: Value },
+    InvalidLiteralError { token_type: TokenType },
+    CannotApplyNegationError { value: Value },
+    InvalidComparisonError { left: Value, right: Value },
 }
 
 impl std::fmt::Display for Error {
@@ -69,24 +74,22 @@ impl std::fmt::Display for Error {
             }
             Error::ExpressionExpected => {
                 format!("[line <fix this later>] Error: Expected expression.")
-            } //Error::InvalidOperandError { left, right } => {
-              //    format!("Error: Unsupported operand: {left} to {right}.")
-              //}
-              //Error::CannotDivideByZeroError { left } => {
-              //    format!("Error: Cannot divide {left} by zero.")
-              //}
-              //Error::InvalidBinaryOperatorError { left, right } => {
-              //    format!("Error: Invalid operator for {left} and {right}.")
-              //}
-              //Error::InvalidLiteralError { token_type } => {
-              //    format!("Error: {token_type} is an invalid literal.")
-              //}
-              //Error::CannotApplyNegationError { value } => {
-              //    format!("Error: Cannot apply negation to {value}.")
-              //}
-              //Error::InvalidComparisonError { left, right } => {
-              //    format!("Error: Cannot compare {left} to {right}.")
-              //}
+            }
+            Error::NoAssignmentOnVariable => format!(
+                "[line <fix this late>] Error: No assignment on variable inside of a for loop initial."
+            ),
+            Error::MissingDot => {
+                format!("[line <fix this late>] Error: Missing '.' after 'super' keyword.")
+            }
+            Error::MissingIdentifier => {
+                format!("[line <fix this late>] Error: Missing identifier after a 'super' call.")
+            }
+            Error::InvalidOperandError { left, right } => todo!(),
+            Error::CannotDivideByZeroError { left } => todo!(),
+            Error::InvalidBinaryOperatorError { left, right } => todo!(),
+            Error::InvalidLiteralError { token_type } => todo!(),
+            Error::CannotApplyNegationError { value } => todo!(),
+            Error::InvalidComparisonError { left, right } => todo!(),
         };
 
         write!(f, "{err_msg}")

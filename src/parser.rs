@@ -1,18 +1,15 @@
+use crate::{Error, program::ASTNode};
 use crate::{
-    lexer::{Token, TokenType},
-    program::{Declaration, AST},
     Result,
+    lexer::{Token, TokenType},
+    program::{AST, Declaration},
 };
-use crate::{program::ASTNode, Error};
-use std::{
-    fmt::{Debug, Display},
-    usize,
-};
+use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     pub ast: Vec<ASTNode<'a>>,
-    pub block_arena: Vec<usize>,
+    pub mem_arena: Vec<usize>,
     pub errors: Vec<Error>,
     pub tokens: Vec<Token>,
     current_token_idx: usize,
@@ -67,23 +64,12 @@ pub enum ExprNodeType {
     Grouping,
     Super,
     Literal,
+    Call,
+    Property,
+    Arguments,
 }
 
 pub type NodeId = usize;
-
-//impl<'a> Iterator for Parser<'a> {
-//    type Item = Result<ASTNode<'a>>;
-//
-//    fn next(&mut self) -> Option<Self::Item> {
-//        //self.program.tokens.get(self.current_token_idx);
-//        //let current_token = self.get_token();
-//
-//        match self.get_token_type() {
-//            Some(TokenType::PRINT) => Some(self.parse_print_statement()),
-//            _ => None,
-//        }
-//    }
-//}
 
 impl<'a> Parser<'a> {
     // region: Utility methods
@@ -91,7 +77,7 @@ impl<'a> Parser<'a> {
         Self {
             tokens,
             ast: vec![],
-            block_arena: vec![],
+            mem_arena: vec![],
             errors: vec![],
             current_token_idx: 0,
         }
@@ -117,7 +103,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    // region: Main parsing methodse
+    // region: Main parsing methods
     pub fn parse(mut self) -> Self {
         while let Some(current_token_type) = self.get_token_type() {
             let _ = match current_token_type {
@@ -128,7 +114,7 @@ impl<'a> Parser<'a> {
 
         Self {
             ast: self.ast,
-            block_arena: self.block_arena,
+            mem_arena: self.mem_arena,
             errors: self.errors,
             tokens: self.tokens,
             current_token_idx: 0,
@@ -306,10 +292,10 @@ impl<'a> Parser<'a> {
         let mut start = None; // This should never be mutated.
         while self.get_token_type() != Some(TokenType::RIGHT_BRACE) {
             let declaration_index = self.parse_declaration()?;
-            self.block_arena.push(declaration_index);
+            self.mem_arena.push(declaration_index);
 
             if length == 0 {
-                start = Some(self.block_arena.len() - 1);
+                start = Some(self.mem_arena.len() - 1);
             }
 
             length += 1;
@@ -449,18 +435,83 @@ impl<'a> Parser<'a> {
         match self.get_token() {
             Some(token) if matches!(token.token_type, TokenType::BANG | TokenType::MINUS) => {
                 self.read_token();
-                let primary = self.parse_unary()?;
+                let call = self.parse_unary()?;
                 self.ast.push(ASTNode::Expression(Expression {
                     node_type: ExprNodeType::Unary,
                     main_token: token,
-                    lhs: Some(primary),
+                    lhs: Some(call),
                     rhs: None,
                 }));
 
                 Ok(self.ast.len() - 1)
             }
-            _ => Ok(self.parse_primary()?),
+            _ => Ok(self.parse_call()?),
         }
+    }
+
+    fn parse_call(&mut self) -> Result<NodeId> {
+        let mut primary = self.parse_primary()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::LEFT_PAREN => {
+                    self.read_token(); // reads '('
+                    let rhs = if self.get_token_type() == Some(TokenType::RIGHT_PAREN) {
+                        None
+                    } else {
+                        let arg_node = self.parse_arguments()?;
+                        Some(arg_node)
+                    };
+
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Call,
+                        main_token: current_token,
+                        lhs: Some(primary),
+                        rhs,
+                    }));
+
+                    self.read_token(); // reads ')'
+                    primary = self.ast.len() - 1;
+                }
+                TokenType::DOT => {
+                    self.read_token(); // reads '.'
+                    let identifier_node = self.parse_primary()?;
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Property,
+                        main_token: current_token,
+                        lhs: Some(identifier_node),
+                        rhs: Some(primary),
+                    }));
+                    primary = self.ast.len() - 1;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(primary)
+    }
+
+    fn parse_arguments(&mut self) -> Result<NodeId> {
+        let first_arg = self.get_token().unwrap();
+        let expr_node = self.parse_expr()?;
+        let mut length = 1usize;
+        self.mem_arena.push(expr_node);
+        let start = self.mem_arena.len() - 1;
+
+        while self.get_token_type() == Some(TokenType::COMMA) {
+            self.read_token(); // reads ','
+            let expr_node = self.parse_expr()?;
+            self.mem_arena.push(expr_node);
+            length += 1;
+        }
+
+        self.ast.push(ASTNode::Expression(Expression {
+            node_type: ExprNodeType::Arguments,
+            main_token: first_arg,
+            lhs: Some(start),
+            rhs: Some(length),
+        }));
+
+        Ok(self.ast.len() - 1)
     }
 
     fn parse_primary(&mut self) -> Result<NodeId> {
@@ -537,7 +588,7 @@ impl<'a> Parser<'a> {
 
 impl<'a> AST<'a> {
     fn goto_node(&self, node_id: &NodeId) -> String {
-        self.display(&self.nodes[*node_id], &self.block_arena)
+        self.display(&self.nodes[*node_id], &self.mem_arena)
     }
 
     fn filter_root_nodes(&self) -> Vec<NodeId> {
@@ -602,7 +653,7 @@ impl<'a> AST<'a> {
                     }
                     Statement::Block { start, length } => {
                         if let Some(start) = start {
-                            for i in &self.block_arena[*start..*start + *length] {
+                            for i in &self.mem_arena[*start..*start + *length] {
                                 referenced[*i] = true;
                             }
                         } else {
@@ -622,7 +673,7 @@ impl<'a> AST<'a> {
     }
 
     // We implement our own display method instead of impl Display because we still need access to AST.
-    fn display(&self, node: &ASTNode<'a>, block_arena: &[usize]) -> String {
+    fn display(&self, node: &ASTNode<'a>, mem_arena: &[usize]) -> String {
         match node {
             ASTNode::Declaration(declaration) => match declaration {
                 Declaration::Class {
@@ -710,7 +761,7 @@ impl<'a> AST<'a> {
                     let mut block = String::from("(block ");
                     if let Some(start) = start {
                         // Guaranteed to have start_idx
-                        for idx in &block_arena[*start..*start + *length] {
+                        for idx in &mem_arena[*start..*start + *length] {
                             block.push_str(self.goto_node(idx).as_str());
                         }
                         block.push(')');
@@ -737,6 +788,32 @@ impl<'a> AST<'a> {
                 ExprNodeType::Super => {
                     format!("(super {})", self.goto_node(&expression.lhs.unwrap()))
                 }
+                ExprNodeType::Call => match (expression.lhs, expression.rhs) {
+                    (Some(lhs), None) => format!("(call_method {})", self.goto_node(&lhs)),
+                    (Some(lhs), Some(rhs)) => format!(
+                        "(call_method {} {})",
+                        self.goto_node(&lhs),
+                        self.goto_node(&rhs)
+                    ),
+                    _ => todo!(),
+                },
+                ExprNodeType::Property => format!(
+                    "(property {} {})",
+                    self.goto_node(&expression.rhs.unwrap()),
+                    self.goto_node(&expression.lhs.unwrap())
+                ),
+                ExprNodeType::Arguments => {
+                    let mut args = String::from("(args");
+                    let start = expression.lhs.unwrap();
+                    let length = expression.rhs.unwrap();
+                    // Guaranteed to have start_idx
+                    for idx in &mem_arena[start..start + length] {
+                        args.push(' ');
+                        args.push_str(self.goto_node(idx).as_str());
+                    }
+                    args.push(')');
+                    args
+                }
             },
         }
     }
@@ -747,7 +824,7 @@ impl Display for AST<'_> {
         let parsed = self
             .filter_root_nodes()
             .iter()
-            .map(|index| self.display(&self.nodes[*index], &self.block_arena))
+            .map(|index| self.display(&self.nodes[*index], &self.mem_arena))
             .reduce(|acc, e| {
                 if !e.is_empty() {
                     format!("{acc}\n{e}")

@@ -30,7 +30,7 @@ pub struct Program<'a, State = None> {
 #[derive(Debug)]
 pub struct AST<'a> {
     pub nodes: Vec<ASTNode<'a>>,
-    pub block_arena: Vec<usize>,
+    pub mem_arena: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -62,7 +62,7 @@ impl<'a> Program<'a, None> {
             line_offsets: vec![],
             ast: AST {
                 nodes: vec![],
-                block_arena: vec![],
+                mem_arena: vec![],
             },
             declarations: vec![],
             input: file_content.as_bytes(),
@@ -89,13 +89,13 @@ impl<'a> Program<'a, Lexed> {
         let parser = Parser::new(self.tokens).parse();
         dbg!(&parser.ast);
         dbg!(&parser.errors);
-        dbg!(&parser.block_arena);
+        dbg!(&parser.mem_arena);
         let program = Program {
             tokens: parser.tokens,
             line_offsets: self.line_offsets,
             ast: AST {
                 nodes: parser.ast,
-                block_arena: parser.block_arena,
+                mem_arena: parser.mem_arena,
             },
             declarations: self.declarations,
             input: self.input,
