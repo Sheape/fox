@@ -67,6 +67,7 @@ pub enum ExprNodeType {
     Call,
     Property,
     Arguments,
+    Assignment,
 }
 
 pub type NodeId = usize;
@@ -94,6 +95,10 @@ impl<'a> Parser<'a> {
         self.tokens
             .get(self.current_token_idx)
             .map(|token| token.token_type.clone())
+    }
+
+    fn revert_token(&mut self) {
+        self.current_token_idx -= 1;
     }
 
     fn read_token(&mut self) {
@@ -332,6 +337,85 @@ impl<'a> Parser<'a> {
 impl<'a> Parser<'a> {
     // region: Recursive descent parsing for expr
     fn parse_expr(&mut self) -> Result<NodeId> {
+        match self.get_token() {
+            Some(token)
+                if matches!(
+                    token.token_type,
+                    TokenType::THIS
+                        | TokenType::LEFT_PAREN
+                        | TokenType::SUPER
+                        | TokenType::IDENTIFIER(_)
+                ) =>
+            {
+                let identifier_node = self.parse_call()?;
+                if self.get_token_type() == Some(TokenType::EQUAL) {
+                    self.read_token();
+                    let value = self.parse_expr()?;
+
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Assignment,
+                        main_token: token,
+                        lhs: Some(identifier_node),
+                        rhs: Some(value),
+                    }));
+
+                    Ok(self.ast.len() - 1)
+                } else {
+                    self.revert_token();
+                    Ok(self.parse_logic_or()?)
+                }
+            }
+            _ => Ok(self.parse_logic_or()?),
+        }
+    }
+
+    fn parse_logic_or(&mut self) -> Result<NodeId> {
+        let mut logic_and = self.parse_logic_and()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::OR => {
+                    self.read_token();
+                    let rhs = self.parse_logic_and()?;
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(logic_and),
+                        rhs: Some(rhs),
+                    }));
+
+                    logic_and = self.ast.len() - 1;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(logic_and)
+    }
+
+    fn parse_logic_and(&mut self) -> Result<NodeId> {
+        let mut equality = self.parse_equality()?;
+        while let Some(current_token) = self.get_token() {
+            match current_token.token_type {
+                TokenType::AND => {
+                    self.read_token();
+                    let rhs = self.parse_equality()?;
+                    self.ast.push(ASTNode::Expression(Expression {
+                        node_type: ExprNodeType::Binary,
+                        main_token: current_token,
+                        lhs: Some(equality),
+                        rhs: Some(rhs),
+                    }));
+
+                    equality = self.ast.len() - 1;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(equality)
+    }
+
+    fn parse_equality(&mut self) -> Result<NodeId> {
         let mut comparison = self.parse_comparison()?;
         while let Some(current_token) = self.get_token() {
             match current_token.token_type {
@@ -814,6 +898,11 @@ impl<'a> AST<'a> {
                     args.push(')');
                     args
                 }
+                ExprNodeType::Assignment => format!(
+                    "(assignment {} {})",
+                    self.goto_node(&expression.lhs.unwrap()),
+                    self.goto_node(&expression.rhs.unwrap())
+                ),
             },
         }
     }
