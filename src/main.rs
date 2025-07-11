@@ -37,6 +37,16 @@ fn main() {
         "parse" => {
             Program::new(&file_contents).lex(true).parse();
         }
+        "evaluate" => {
+            Program::new(&file_contents).lex(false).parse().compile();
+        }
+        "run" => {
+            Program::new(&file_contents)
+                .lex(false)
+                .parse()
+                .compile()
+                .execute();
+        }
         //"evaluate" => {
         //    let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
         //        eprintln!("Failed to read file {}", filename);

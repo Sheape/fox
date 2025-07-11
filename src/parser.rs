@@ -1,9 +1,9 @@
-use crate::{Error, program::ASTNode};
 use crate::{
-    Result,
     lexer::{Token, TokenType},
-    program::{AST, Declaration},
+    program::{Declaration, AST},
+    Result,
 };
+use crate::{program::ASTNode, Error};
 use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct Parser<'a> {
     current_token_idx: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub node_type: ExprNodeType,
     pub main_token: Token, // PERF: Use &'a Token instead as we dont want a copy of the token.
@@ -31,7 +31,7 @@ pub struct Expression {
 //    String,
 //}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expr(NodeId),
     Print(NodeId),
@@ -57,7 +57,7 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExprNodeType {
     Binary,
     Unary,
@@ -675,7 +675,7 @@ impl<'a> AST<'a> {
         self.display(&self.nodes[*node_id], &self.mem_arena)
     }
 
-    fn filter_root_nodes(&self) -> Vec<NodeId> {
+    pub fn filter_root_nodes(&self) -> Vec<NodeId> {
         let mut referenced = vec![false; self.nodes.len()];
         for (idx, node) in self.nodes.iter().enumerate() {
             match node {

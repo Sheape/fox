@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use crate::function::Function;
 use crate::lexer::{Lexer, Token};
 use crate::parser::{Expression, NodeId, Parser, Statement};
+use crate::vm::{Compiler, VM};
 use crate::Error;
 
 // Program states depending on which part of the process they are
@@ -33,14 +34,14 @@ pub struct AST<'a> {
     pub mem_arena: Vec<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ASTNode<'a> {
     Declaration(Declaration<'a>),
     Statement(Statement),
     Expression(Expression),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Declaration<'a> {
     Class {
         name: &'a Token,
@@ -87,9 +88,9 @@ impl<'a> Program<'a, None> {
 impl<'a> Program<'a, Lexed> {
     pub fn parse(self) -> Program<'a, Parsed> {
         let parser = Parser::new(self.tokens).parse();
-        dbg!(&parser.ast);
-        dbg!(&parser.errors);
-        dbg!(&parser.mem_arena);
+        //dbg!(&parser.ast);
+        //dbg!(&parser.errors);
+        //dbg!(&parser.mem_arena);
         let program = Program {
             tokens: parser.tokens,
             line_offsets: self.line_offsets,
@@ -108,7 +109,8 @@ impl<'a> Program<'a, Lexed> {
 }
 
 impl<'a> Program<'a, Parsed> {
-    pub fn compile(self) -> Program<'a, Compiled> {
-        todo!()
+    pub fn compile(self) -> VM {
+        let compiler = Compiler::new(self.ast).compile();
+        VM::init(compiler.bytecode, compiler.constant_pool)
     }
 }

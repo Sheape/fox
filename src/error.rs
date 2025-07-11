@@ -23,6 +23,8 @@ pub enum Error {
     MissingIdentifier,
     MissingDot,
     NoAssignmentOnVariable,
+
+    PlaceholderError,
     // Eval Errors
     InvalidOperandError { left: Value, right: Value },
     CannotDivideByZeroError { left: Value },
@@ -90,6 +92,7 @@ impl std::fmt::Display for Error {
             Error::InvalidLiteralError { token_type } => todo!(),
             Error::CannotApplyNegationError { value } => todo!(),
             Error::InvalidComparisonError { left, right } => todo!(),
+            Error::PlaceholderError => todo!(),
         };
 
         write!(f, "{err_msg}")
