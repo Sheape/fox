@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::usize;
 
 use crate::parser::NodeId;
-use crate::vm::opcode::{ADD, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB};
+use crate::vm::opcode::{
+    ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB,
+};
+use crate::Error;
 
 mod compiler;
 mod opcode;
@@ -55,6 +58,7 @@ impl VM {
     }
 
     pub fn execute(&mut self) {
+        println!("----- Execution starts ------");
         while self.ip < self.bytecode.len() {
             match self.next_u1() {
                 LOAD_CONST => {
@@ -89,6 +93,32 @@ impl VM {
                 NOT => {
                     let result = !self.pop_local_stack();
                     self.local_stack.push(result);
+                }
+                CMP_GREATER => {
+                    let flag = self.next_u1();
+                    let second_operand = self.pop_local_stack();
+                    let first_operand = self.pop_local_stack();
+                    let result = match flag {
+                        0 => Ok(first_operand > second_operand),
+                        1 => Ok(first_operand >= second_operand),
+                        _ => Err(Error::PlaceholderError),
+                    };
+                    self.local_stack.push(Value::Boolean(result.unwrap()));
+                }
+                CMP_LESS => {
+                    let flag = self.next_u1();
+                    let second_operand = self.pop_local_stack();
+                    let first_operand = self.pop_local_stack();
+                    let result = match flag {
+                        0 => Ok(first_operand < second_operand),
+                        1 => Ok(first_operand <= second_operand),
+                        _ => Err(Error::PlaceholderError),
+                    };
+                    self.local_stack.push(Value::Boolean(result.unwrap()));
+                }
+                CMP_EQ => {
+                    let result = self.pop_local_stack() == self.pop_local_stack();
+                    self.local_stack.push(Value::Boolean(result));
                 }
                 PRINT => {
                     println!("{}", self.pop_local_stack());

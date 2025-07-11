@@ -1,7 +1,6 @@
 use std::{
     fmt::Display,
     ops::{Add, Div, Mul, Neg, Not, Sub},
-    u16,
 };
 
 use crate::{
@@ -9,7 +8,7 @@ use crate::{
     parser::{ExprNodeType, Expression, NodeId, Statement},
     program::{ASTNode, Declaration, AST},
     vm::{
-        opcode::{ADD, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB},
+        opcode::{ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB},
         Bytecode,
     },
     Error, Result,
@@ -53,7 +52,7 @@ impl<'a> Compiler<'a> {
             .collect();
         println!("Bytecode instructions:");
         let _ = &self.bytecode.iter().for_each(|byte| println!("{byte:#x}"));
-        dbg!(&self.constant_pool);
+        //dbg!(&self.constant_pool);
 
         Self {
             ast: self.ast,
@@ -124,6 +123,32 @@ impl<'a> Compiler<'a> {
                     TokenType::MINUS => Ok(self.bytecode.push(SUB)),
                     TokenType::STAR => Ok(self.bytecode.push(MUL)),
                     TokenType::SLASH => Ok(self.bytecode.push(DIV)),
+                    TokenType::LESS => {
+                        self.bytecode.push(CMP_LESS);
+                        self.bytecode.push(0u8);
+                        Ok(())
+                    }
+                    TokenType::LESS_EQUAL => {
+                        self.bytecode.push(CMP_LESS);
+                        self.bytecode.push(1u8);
+                        Ok(())
+                    }
+                    TokenType::GREATER => {
+                        self.bytecode.push(CMP_GREATER);
+                        self.bytecode.push(0u8);
+                        Ok(())
+                    }
+                    TokenType::GREATER_EQUAL => {
+                        self.bytecode.push(CMP_GREATER);
+                        self.bytecode.push(1u8);
+                        Ok(())
+                    }
+                    TokenType::EQUAL_EQUAL => Ok(self.bytecode.push(CMP_EQ)),
+                    TokenType::BANG_EQUAL => {
+                        self.bytecode.push(CMP_EQ);
+                        self.bytecode.push(NOT);
+                        Ok(())
+                    }
                     _ => Err(Error::PlaceholderError), // TODO: Put proper error types here
                 }
             }
