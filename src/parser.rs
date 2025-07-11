@@ -341,10 +341,7 @@ impl<'a> Parser<'a> {
             Some(token)
                 if matches!(
                     token.token_type,
-                    TokenType::THIS
-                        | TokenType::LEFT_PAREN
-                        | TokenType::SUPER
-                        | TokenType::IDENTIFIER(_)
+                    TokenType::THIS | TokenType::SUPER | TokenType::IDENTIFIER(_)
                 ) =>
             {
                 let identifier_node = self.parse_call()?;

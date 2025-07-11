@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::usize;
 
 use crate::parser::NodeId;
-use crate::vm::opcode::{ADD, LOAD_CONST, PRINT};
+use crate::vm::opcode::{ADD, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB};
 
 mod compiler;
 mod opcode;
@@ -55,9 +55,8 @@ impl VM {
     }
 
     pub fn execute(&mut self) {
-        while self.ip < self.bytecode.len() - 1 {
-            self.read_byte();
-            match self.get_byte() {
+        while self.ip < self.bytecode.len() {
+            match self.next_u1() {
                 LOAD_CONST => {
                     let index = self.next_u2();
                     let value = self.constant_pool[index as usize].clone();
@@ -66,6 +65,30 @@ impl VM {
                 ADD => {
                     let result = self.pop_local_stack() + self.pop_local_stack();
                     self.local_stack.push(result.unwrap());
+                }
+                SUB => {
+                    let subtrahend = self.pop_local_stack();
+                    let minued = self.pop_local_stack();
+                    let result = minued - subtrahend;
+                    self.local_stack.push(result.unwrap());
+                }
+                MUL => {
+                    let result = self.pop_local_stack() * self.pop_local_stack();
+                    self.local_stack.push(result.unwrap());
+                }
+                DIV => {
+                    let divisor = self.pop_local_stack();
+                    let dividend = self.pop_local_stack();
+                    let result = dividend / divisor;
+                    self.local_stack.push(result.unwrap());
+                }
+                NEG => {
+                    let result = -self.pop_local_stack();
+                    self.local_stack.push(result.unwrap());
+                }
+                NOT => {
+                    let result = !self.pop_local_stack();
+                    self.local_stack.push(result);
                 }
                 PRINT => {
                     println!("{}", self.pop_local_stack());

@@ -9,7 +9,7 @@ use crate::{
     parser::{ExprNodeType, Expression, NodeId, Statement},
     program::{ASTNode, Declaration, AST},
     vm::{
-        opcode::{ADD, DIV, LOAD_CONST, MUL, PRINT, SUB},
+        opcode::{ADD, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB},
         Bytecode,
     },
     Error, Result,
@@ -129,9 +129,13 @@ impl<'a> Compiler<'a> {
             }
             ExprNodeType::Unary => {
                 self.compile_node(&expression.lhs.unwrap())?;
-                Ok(())
+                match expression.main_token.token_type {
+                    TokenType::MINUS => Ok(self.bytecode.push(NEG)),
+                    TokenType::BANG => Ok(self.bytecode.push(NOT)),
+                    _ => Err(Error::PlaceholderError),
+                }
             }
-            ExprNodeType::Grouping => todo!(),
+            ExprNodeType::Grouping => self.compile_node(&expression.lhs.unwrap()),
             ExprNodeType::Super => todo!(),
             ExprNodeType::Literal => {
                 self.compile_literal(expression.main_token.clone())?;
