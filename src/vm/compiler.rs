@@ -4,19 +4,23 @@ use std::{
 };
 
 use crate::{
+    Error, Result,
     lexer::{Token, TokenType},
     parser::{ExprNodeType, Expression, NodeId, Statement},
-    program::{ASTNode, Declaration, AST},
+    program::{AST, ASTNode, Declaration},
     vm::{
-        opcode::{ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB},
         Bytecode,
+        opcode::{
+            ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DECLARE_GLOBAL, DIV, LOAD_CONST, LOAD_GLOBAL,
+            LOAD_LOCAL, MUL, NEG, NOT, PRINT, SET_GLOBAL, SUB,
+        },
     },
-    Error, Result,
 };
 
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
+    Utf8(String), // this is used for class names, variables names, fucntion names, etc.
     Float(f64),
     Integer(i64),
     Boolean(bool),
@@ -50,8 +54,9 @@ impl<'a> Compiler<'a> {
             .iter()
             .map(|node_id| self.compile_node(node_id))
             .collect();
-        println!("Bytecode instructions:");
-        let _ = &self.bytecode.iter().for_each(|byte| println!("{byte:#x}"));
+        println!("\nBytecode instructions:");
+        self.bytecode.iter().for_each(|byte| print!("{byte:#} "));
+        println!();
         //dbg!(&self.constant_pool);
 
         Self {
@@ -77,7 +82,21 @@ impl<'a> Compiler<'a> {
                 methods,
             } => todo!(),
             Declaration::Function(function) => todo!(),
-            Declaration::Variable { name, expression } => todo!(),
+            Declaration::Variable { name, expression } => {
+                self.constant_pool.push(Value::Utf8(name.to_string()));
+                let (high, low) = u16_to_u8((self.constant_pool.len() - 1) as u16);
+
+                match expression {
+                    Some(node_id) => {
+                        self.compile_node(node_id)?;
+                        self.bytecode.push(SET_GLOBAL)
+                    }
+                    None => self.bytecode.push(DECLARE_GLOBAL),
+                };
+
+                self.bytecode.push(high);
+                self.bytecode.push(low);
+            }
             Declaration::Statement(node_id) => self.compile_node(node_id)?,
         };
 
@@ -169,11 +188,54 @@ impl<'a> Compiler<'a> {
             ExprNodeType::Call => todo!(),
             ExprNodeType::Property => todo!(),
             ExprNodeType::Arguments => todo!(),
-            ExprNodeType::Assignment => todo!(),
+            ExprNodeType::Assignment => {
+                if let TokenType::IDENTIFIER(ident_name) = &expression.main_token.token_type {
+                    let ident_idx = self
+                        .constant_pool
+                        .iter()
+                        .position(|val| {
+                            if let Value::Utf8(str) = &val {
+                                *str == *ident_name
+                            } else {
+                                false
+                            }
+                        })
+                        .unwrap();
+                    let (high, low) = u16_to_u8(ident_idx as u16);
+
+                    self.compile_node(&expression.rhs.unwrap())?;
+                    self.bytecode.push(SET_GLOBAL);
+                    self.bytecode.push(high);
+                    self.bytecode.push(low);
+                    Ok(())
+                } else {
+                    Err(Error::PlaceholderError)
+                }
+            }
         }
     }
 
     fn compile_literal(&mut self, token: Token) -> Result<()> {
+        if let TokenType::IDENTIFIER(ident_name) = token.token_type {
+            let ident_idx = self
+                .constant_pool
+                .iter()
+                .position(|val| {
+                    if let Value::Utf8(str) = &val {
+                        *str == ident_name
+                    } else {
+                        false
+                    }
+                })
+                .unwrap();
+            let (high, low) = u16_to_u8(ident_idx as u16);
+
+            self.bytecode.push(LOAD_GLOBAL);
+            self.bytecode.push(high);
+            self.bytecode.push(low);
+            return Ok(());
+        }
+
         let value = match token.token_type {
             TokenType::STRING(str) => Ok(Value::String(str)),
             TokenType::NUMBER_FLOAT(_, float) => Ok(Value::Float(float)),
@@ -203,6 +265,7 @@ impl Display for Value {
             Value::Integer(int) => write!(f, "{int}"),
             Value::Boolean(bool) => write!(f, "{bool}"),
             Value::String(str) => write!(f, "{str}"),
+            Value::Utf8(str) => write!(f, "{str}"),
             Value::Nil => write!(f, "nil"),
         }
     }

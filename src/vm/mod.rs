@@ -1,11 +1,10 @@
 use std::collections::HashMap;
-use std::usize;
 
-use crate::parser::NodeId;
-use crate::vm::opcode::{
-    ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DIV, LOAD_CONST, MUL, NEG, NOT, PRINT, SUB,
-};
 use crate::Error;
+use crate::vm::opcode::{
+    ADD, CMP_EQ, CMP_GREATER, CMP_LESS, DECLARE_GLOBAL, DIV, LOAD_CONST, LOAD_GLOBAL, MUL, NEG,
+    NOT, PRINT, SET_GLOBAL, SUB,
+};
 
 mod compiler;
 mod opcode;
@@ -15,7 +14,7 @@ pub(crate) use compiler::Value;
 pub use opcode::Bytecode;
 
 pub struct VM {
-    global: HashMap<String, NodeId>,
+    global: HashMap<String, Value>,
     constant_pool: Vec<Value>,
     bytecode: Bytecode,
     local_stack: Vec<Value>,
@@ -67,7 +66,9 @@ impl VM {
                     self.local_stack.push(value);
                 }
                 ADD => {
-                    let result = self.pop_local_stack() + self.pop_local_stack();
+                    let second_operand = self.pop_local_stack();
+                    let first_operand = self.pop_local_stack();
+                    let result = first_operand + second_operand;
                     self.local_stack.push(result.unwrap());
                 }
                 SUB => {
@@ -121,7 +122,31 @@ impl VM {
                     self.local_stack.push(Value::Boolean(result));
                 }
                 PRINT => {
-                    println!("{}", self.pop_local_stack());
+                    println!("{}", self.local_stack.last().unwrap());
+                }
+                DECLARE_GLOBAL => {
+                    let index = self.next_u2();
+                    if let Value::Utf8(var_name) = &self.constant_pool[index as usize] {
+                        self.global.insert(var_name.to_string(), Value::Nil);
+                    }
+                }
+                SET_GLOBAL => {
+                    let index = self.next_u2();
+                    let value = match self.get_byte() {
+                        SET_GLOBAL | PRINT => self.local_stack.last().unwrap().clone(),
+                        _ => self.pop_local_stack(),
+                    };
+
+                    if let Value::Utf8(var_name) = &self.constant_pool[index as usize] {
+                        self.global.insert(var_name.to_string(), value);
+                    }
+                }
+                LOAD_GLOBAL => {
+                    let index = self.next_u2();
+                    if let Value::Utf8(var_name) = &self.constant_pool[index as usize] {
+                        let value = self.global.get(var_name).unwrap();
+                        self.local_stack.push(value.clone());
+                    }
                 }
                 _ => (),
             }
