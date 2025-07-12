@@ -1,9 +1,9 @@
+use crate::{Error, program::ASTNode};
 use crate::{
-    lexer::{Token, TokenType},
-    program::{Declaration, AST},
     Result,
+    lexer::{Token, TokenType},
+    program::{AST, Declaration},
 };
-use crate::{program::ASTNode, Error};
 use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
@@ -312,12 +312,12 @@ impl<'a> Parser<'a> {
 
     fn parse_return_statement(&mut self) -> Result<NodeId> {
         self.read_token();
-        self.parse_statement()
+        self.parse_expr_statement()
     }
 
     fn parse_print_statement(&mut self) -> Result<NodeId> {
         self.read_token(); // Skip "print"
-        self.parse_statement()
+        self.parse_expr_statement()
     }
 
     fn parse_expr_statement(&mut self) -> Result<NodeId> {
