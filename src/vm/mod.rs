@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::vm::opcode::*;
 use crate::Error;
+use crate::vm::opcode::*;
 
 mod compiler;
 mod opcode;
@@ -183,6 +183,16 @@ impl VM {
                     let count = self.next_u1();
                     self.local
                         .drain(self.local.len() - count as usize..self.local.len());
+                }
+                JMP_IF_FALSE => {
+                    let jmp_offset = self.next_u2();
+                    if self.pop_stack() == Value::Boolean(false) {
+                        self.ip += jmp_offset as usize;
+                    }
+                }
+                JMP => {
+                    let jmp_offset = self.next_u2();
+                    self.ip += jmp_offset as usize;
                 }
                 _ => (),
             }

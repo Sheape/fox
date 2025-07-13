@@ -4,11 +4,11 @@ use std::{
 };
 
 use crate::{
+    Error, Result,
     lexer::{Token, TokenType},
     parser::{ExprNodeType, Expression, NodeId, Statement},
-    program::{ASTNode, Declaration, AST},
-    vm::{opcode::*, Bytecode},
-    Error, Result,
+    program::{AST, ASTNode, Declaration},
+    vm::{Bytecode, opcode::*},
 };
 
 #[derive(Debug, Clone)]
@@ -133,7 +133,34 @@ impl<'a> Compiler<'a> {
                 condition,
                 statement,
                 else_block,
-            } => todo!(),
+            } => {
+                self.compile_node(condition)?;
+                self.bytecode.push(JMP_IF_FALSE);
+                let jmp_false_index = self.bytecode.len();
+                self.bytecode.push(0); // replace with the real index later
+                self.bytecode.push(0);
+
+                self.compile_node(statement)?;
+
+                let jmp_index = self.bytecode.len() + 1;
+                if else_block.is_some() {
+                    self.bytecode.push(JMP);
+                    self.bytecode.push(0); // replace with the real index later
+                    self.bytecode.push(0);
+                }
+
+                let (high, low) = u16_to_u8((self.bytecode.len() - jmp_false_index - 2) as u16);
+                self.bytecode[jmp_false_index] = high;
+                self.bytecode[jmp_false_index + 1] = low;
+
+                if let Some(else_idx) = else_block {
+                    self.compile_node(else_idx)?;
+
+                    let (high, low) = u16_to_u8((self.bytecode.len() - jmp_index - 2) as u16);
+                    self.bytecode[jmp_index] = high;
+                    self.bytecode[jmp_index + 1] = low;
+                }
+            }
             Statement::For {
                 initial,
                 condition,
