@@ -1,18 +1,19 @@
-use crate::{Error, program::ASTNode};
 use crate::{
-    Result,
     lexer::{Token, TokenType},
-    program::{AST, Declaration},
+    program::{Declaration, AST},
+    Result,
 };
+use crate::{program::ASTNode, Error};
 use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     pub ast: Vec<ASTNode<'a>>,
-    pub mem_arena: Vec<usize>,
+    pub mem_arena: Vec<ASTNodeRef>,
     pub errors: Vec<Error>,
     pub tokens: Vec<Token>,
     current_token_idx: usize,
+    scope_level: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +71,12 @@ pub enum ExprNodeType {
     Assignment,
 }
 
+#[derive(Debug, Clone)]
+pub enum ASTNodeRef {
+    ScopedDeclaration { reference: usize, depth: u8 },
+    MethodArgs(usize),
+}
+
 pub type NodeId = usize;
 
 impl<'a> Parser<'a> {
@@ -81,6 +88,7 @@ impl<'a> Parser<'a> {
             mem_arena: vec![],
             errors: vec![],
             current_token_idx: 0,
+            scope_level: 0,
         }
     }
 
@@ -123,10 +131,12 @@ impl<'a> Parser<'a> {
             errors: self.errors,
             tokens: self.tokens,
             current_token_idx: 0,
+            scope_level: 0,
         }
     }
 
     fn parse_declaration(&mut self) -> Result<NodeId> {
+        let is_root = self.scope_level == 0;
         let ast_node = match self.get_token_type() {
             Some(TokenType::VAR) => self
                 .parse_var_declaration()
@@ -139,6 +149,13 @@ impl<'a> Parser<'a> {
             Ok(node) => self.ast.push(node),
             Err(err) => self.errors.push(err),
         }
+
+        is_root.then(|| {
+            self.mem_arena.push(ASTNodeRef::ScopedDeclaration {
+                reference: self.ast.len() - 1,
+                depth: 0,
+            })
+        });
 
         Ok(self.ast.len() - 1)
     }
@@ -295,9 +312,13 @@ impl<'a> Parser<'a> {
         self.read_token(); // Reads '{'
         let mut length = 0usize;
         let mut start = None; // This should never be mutated.
+        self.scope_level += 1;
         while self.get_token_type() != Some(TokenType::RIGHT_BRACE) {
             let declaration_index = self.parse_declaration()?;
-            self.mem_arena.push(declaration_index);
+            self.mem_arena.push(ASTNodeRef::ScopedDeclaration {
+                reference: declaration_index,
+                depth: self.scope_level,
+            });
 
             if length == 0 {
                 start = Some(self.mem_arena.len() - 1);
@@ -305,6 +326,7 @@ impl<'a> Parser<'a> {
 
             length += 1;
         }
+        self.scope_level -= 1;
         self.read_token(); // Reads '}'
 
         Ok((start, length))
@@ -575,13 +597,13 @@ impl<'a> Parser<'a> {
         let first_arg = self.get_token().unwrap();
         let expr_node = self.parse_expr()?;
         let mut length = 1usize;
-        self.mem_arena.push(expr_node);
+        self.mem_arena.push(ASTNodeRef::MethodArgs(expr_node));
         let start = self.mem_arena.len() - 1;
 
         while self.get_token_type() == Some(TokenType::COMMA) {
             self.read_token(); // reads ','
             let expr_node = self.parse_expr()?;
-            self.mem_arena.push(expr_node);
+            self.mem_arena.push(ASTNodeRef::MethodArgs(expr_node));
             length += 1;
         }
 
@@ -668,93 +690,48 @@ impl<'a> Parser<'a> {
 //}
 
 impl<'a> AST<'a> {
+    pub fn filter_root_nodes(&self) -> Vec<usize> {
+        self.mem_arena
+            .iter()
+            .filter_map(|node_ref| {
+                if let ASTNodeRef::ScopedDeclaration { reference, depth } = *node_ref {
+                    (depth == 0).then_some(reference)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn filter_scoped_declaration(
+        &self,
+        start: usize,
+        length: usize,
+        scope_level: u8,
+    ) -> Vec<usize> {
+        let mut count = 0usize;
+        self.mem_arena[start..]
+            .iter()
+            .filter_map(|node_ref| {
+                if let ASTNodeRef::ScopedDeclaration { reference, depth } = *node_ref
+                    && depth == scope_level
+                    && count < length
+                {
+                    count += 1;
+                    Some(reference)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     fn goto_node(&self, node_id: &NodeId) -> String {
         self.display(&self.nodes[*node_id], &self.mem_arena)
     }
 
-    pub fn filter_root_nodes(&self) -> Vec<NodeId> {
-        let mut referenced = vec![false; self.nodes.len()];
-        for (idx, node) in self.nodes.iter().enumerate() {
-            match node {
-                ASTNode::Declaration(declaration) => match declaration {
-                    Declaration::Class {
-                        name,
-                        inherited_class,
-                        methods,
-                    } => todo!(),
-                    Declaration::Function(function) => todo!(),
-                    Declaration::Variable {
-                        name: _,
-                        expression,
-                    } => {
-                        if let Some(expr_idx) = expression {
-                            referenced[*expr_idx] = true;
-                        }
-                    }
-                    Declaration::Statement(statement_idx) => referenced[*statement_idx] = true,
-                },
-                ASTNode::Statement(statement) => match statement {
-                    Statement::Expr(expr_idx) => referenced[*expr_idx] = true,
-                    Statement::Print(statement_idx) => referenced[*statement_idx] = true,
-                    Statement::Return(statement_idx) => referenced[*statement_idx] = true,
-                    Statement::While {
-                        condition,
-                        statement,
-                    } => {
-                        referenced[*condition] = true;
-                        referenced[*statement] = true;
-                    }
-                    Statement::If {
-                        condition,
-                        statement,
-                        else_block,
-                    } => {
-                        referenced[*condition] = true;
-                        referenced[*statement] = true;
-                        if let Some(else_index) = else_block {
-                            referenced[*else_index] = true
-                        }
-                    }
-                    Statement::For {
-                        initial,
-                        condition,
-                        after_expr,
-                        statement,
-                    } => {
-                        if let Some(initial_idx) = initial {
-                            referenced[*initial_idx] = true;
-                        }
-                        if let Some(condition_idx) = condition {
-                            referenced[*condition_idx] = true;
-                        }
-                        if let Some(after_expr_idx) = after_expr {
-                            referenced[*after_expr_idx] = true;
-                        }
-                        referenced[*statement] = true;
-                    }
-                    Statement::Block { start, length } => {
-                        if let Some(start) = start {
-                            for i in &self.mem_arena[*start..*start + *length] {
-                                referenced[*i] = true;
-                            }
-                        } else {
-                            referenced[idx] = true;
-                        }
-                    }
-                },
-                _ => referenced[idx] = true,
-            }
-        }
-
-        referenced
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, is_ref)| if !*is_ref { Some(idx) } else { None })
-            .collect()
-    }
-
     // We implement our own display method instead of impl Display because we still need access to AST.
-    fn display(&self, node: &ASTNode<'a>, mem_arena: &[usize]) -> String {
+    fn display(&self, node: &ASTNode<'a>, mem_arena: &[ASTNodeRef]) -> String {
         match node {
             ASTNode::Declaration(declaration) => match declaration {
                 Declaration::Class {
@@ -839,14 +816,25 @@ impl<'a> AST<'a> {
                     )
                 }
                 Statement::Block { start, length } => {
-                    let mut block = String::from("(block ");
+                    let mut block = String::from("(block [");
                     if let Some(start) = start {
                         // Guaranteed to have start_idx
-                        for idx in &mem_arena[*start..*start + *length] {
-                            block.push_str(self.goto_node(idx).as_str());
+                        if let ASTNodeRef::ScopedDeclaration {
+                            reference: _,
+                            depth,
+                        } = self.mem_arena[*start]
+                        {
+                            for idx in self.filter_scoped_declaration(*start, *length, depth) {
+                                block.push_str(self.goto_node(&idx).as_str());
+                                block.push(' ');
+                            }
+                            block.pop();
+                            block.push(']');
+                            block.push(')');
+                            block
+                        } else {
+                            String::from("(block)")
                         }
-                        block.push(')');
-                        block
                     } else {
                         String::from("(block)")
                     }
@@ -889,6 +877,9 @@ impl<'a> AST<'a> {
                     let length = expression.rhs.unwrap();
                     // Guaranteed to have start_idx
                     for idx in &mem_arena[start..start + length] {
+                        let ASTNodeRef::MethodArgs(idx) = idx else {
+                            panic!("Invalid Method args!!");
+                        };
                         args.push(' ');
                         args.push_str(self.goto_node(idx).as_str());
                     }

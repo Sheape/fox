@@ -35,7 +35,7 @@ fn main() {
             Program::new(&file_contents).lex(true);
         }
         "parse" => {
-            Program::new(&file_contents).lex(true).parse();
+            Program::new(&file_contents).lex(false).parse();
         }
         "evaluate" => {
             Program::new(&file_contents).lex(false).parse().compile();

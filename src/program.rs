@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::function::Function;
 use crate::lexer::{Lexer, Token};
-use crate::parser::{Expression, NodeId, Parser, Statement};
+use crate::parser::{ASTNodeRef, Expression, NodeId, Parser, Statement};
 use crate::vm::{Compiler, VM};
 use crate::Error;
 
@@ -31,7 +31,7 @@ pub struct Program<'a, State = None> {
 #[derive(Debug)]
 pub struct AST<'a> {
     pub nodes: Vec<ASTNode<'a>>,
-    pub mem_arena: Vec<usize>,
+    pub mem_arena: Vec<ASTNodeRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,9 +88,14 @@ impl<'a> Program<'a, None> {
 impl<'a> Program<'a, Lexed> {
     pub fn parse(self) -> Program<'a, Parsed> {
         let parser = Parser::new(self.tokens).parse();
-        //dbg!(&parser.ast);
+        dbg!(&parser.ast);
         //dbg!(&parser.errors);
-        //dbg!(&parser.mem_arena);
+        dbg!(&parser.mem_arena);
+        //dbg!(&parser.root_nodes);
+        //dbg!(&parser.ast[11]);
+        //let _ = &parser.mem_arena.iter().for_each(|index| {
+        //    dbg!(&parser.ast[*index]);
+        //});
         let program = Program {
             tokens: parser.tokens,
             line_offsets: self.line_offsets,
