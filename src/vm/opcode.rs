@@ -24,3 +24,4 @@ pub const DROP          : u8 = 18;  // Takes u8 as args which is the number of e
 pub const PRINT         : u8 = 19;
 pub const JMP_IF_FALSE  : u8 = 20;
 pub const JMP           : u8 = 21;
+pub const JMP_UP        : u8 = 22;

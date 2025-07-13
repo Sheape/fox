@@ -4,11 +4,11 @@ use std::{
 };
 
 use crate::{
-    Error, Result,
     lexer::{Token, TokenType},
     parser::{ExprNodeType, Expression, NodeId, Statement},
-    program::{AST, ASTNode, Declaration},
-    vm::{Bytecode, opcode::*},
+    program::{ASTNode, Declaration, AST},
+    vm::{opcode::*, Bytecode},
+    Error, Result,
 };
 
 #[derive(Debug, Clone)]
@@ -128,7 +128,24 @@ impl<'a> Compiler<'a> {
             Statement::While {
                 condition,
                 statement,
-            } => todo!(),
+            } => {
+                let initial_idx = self.bytecode.len();
+                self.compile_node(condition)?;
+                self.bytecode.push(JMP_IF_FALSE);
+                let jmp_false_index = self.bytecode.len();
+                self.bytecode.push(0);
+                self.bytecode.push(0);
+                self.compile_node(statement)?;
+
+                self.bytecode.push(JMP_UP);
+                let (high, low) = u16_to_u8((self.bytecode.len() - initial_idx + 2) as u16);
+                self.bytecode.push(high);
+                self.bytecode.push(low);
+
+                let (high, low) = u16_to_u8((self.bytecode.len() - jmp_false_index - 2) as u16);
+                self.bytecode[jmp_false_index] = high;
+                self.bytecode[jmp_false_index + 1] = low;
+            }
             Statement::If {
                 condition,
                 statement,
@@ -291,7 +308,7 @@ impl<'a> Compiler<'a> {
             let scope_range = &self.local_names[self.previous_scope_count as usize..local_count];
             for (idx, var_name) in scope_range.iter().enumerate().rev() {
                 if var_name == name {
-                    return Ok((scope_level + idx, true));
+                    return Ok((scope_level + idx - 1, true));
                 }
             }
 

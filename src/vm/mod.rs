@@ -206,6 +206,10 @@ impl VM {
                     let jmp_offset = self.next_u2();
                     self.ip += jmp_offset as usize;
                 }
+                JMP_UP => {
+                    let jmp_offset = self.next_u2();
+                    self.ip -= jmp_offset as usize;
+                }
                 _ => (),
             }
         }
