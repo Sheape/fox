@@ -17,17 +17,19 @@ pub struct VM {
     constant_pool: Vec<Value>,
     bytecode: Bytecode,
     ip: usize,
+    local_count: u8,
 }
 
 impl VM {
     pub fn init(bytecode: Bytecode, constant_pool: Vec<Value>) -> Self {
         Self {
             global: HashMap::new(),
-            local: vec![Value::Nil; 255],
+            local: vec![],
             stack: vec![],
             constant_pool,
             bytecode,
             ip: 0,
+            local_count: 0,
         }
     }
 
@@ -52,6 +54,12 @@ impl VM {
 
     fn pop_stack(&mut self) -> Value {
         self.stack.pop().unwrap()
+    }
+
+    fn pop_local_stack(&mut self) -> Value {
+        let value = self.local.pop().unwrap();
+        self.local_count = self.local.len() as u8;
+        value
     }
 
     pub fn execute(&mut self) {
@@ -119,9 +127,7 @@ impl VM {
                     let result = self.pop_stack() == self.pop_stack();
                     self.stack.push(Value::Boolean(result));
                 }
-                PRINT => {
-                    println!("{}", self.stack.last().unwrap());
-                }
+                PRINT => println!("{}", self.stack.last().unwrap()),
                 DECLARE_GLOBAL => {
                     let index = self.next_u2();
                     if let Value::Utf8(name) = &self.constant_pool[index as usize] {
@@ -146,18 +152,37 @@ impl VM {
                         self.stack.push(value.clone());
                     }
                 }
-                SET_LOCAL => {
-                    let index = self.next_u1();
+                DECLARE_LOCAL => {
+                    let flag = self.next_u1();
+                    if flag == 0 {
+                        self.local.push(Value::Nil);
+                        return;
+                    }
+
                     let value = match self.get_byte() {
                         SET_GLOBAL | PRINT => self.stack.last().unwrap().clone(),
                         _ => self.pop_stack(),
                     };
-                    self.local[index as usize] = value;
+                    self.local.push(value);
+                }
+                SET_LOCAL => {
+                    let local_index = self.next_u1();
+                    let value = match self.get_byte() {
+                        SET_LOCAL | PRINT => self.stack.last().unwrap().clone(),
+                        _ => self.pop_stack(),
+                    };
+
+                    self.local[local_index as usize] = value;
                 }
                 LOAD_LOCAL => {
                     let index = self.next_u1();
                     let value = &self.local[index as usize];
                     self.stack.push(value.clone());
+                }
+                DROP => {
+                    let count = self.next_u1();
+                    self.local
+                        .drain(self.local.len() - count as usize..self.local.len());
                 }
                 _ => (),
             }

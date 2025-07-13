@@ -26,7 +26,7 @@ pub struct Compiler<'a> {
     pub bytecode: Bytecode,
     pub constant_pool: Vec<Value>,
     local_names: Vec<String>,
-    local_count: u8,
+    previous_scope_count: u8,
     scope_level: u8,
 }
 
@@ -42,7 +42,7 @@ impl<'a> Compiler<'a> {
             bytecode: vec![],
             constant_pool: vec![],
             local_names: vec![],
-            local_count: 0,
+            previous_scope_count: 0,
             scope_level: 0,
         }
     }
@@ -56,14 +56,15 @@ impl<'a> Compiler<'a> {
         println!("\nBytecode instructions:");
         self.bytecode.iter().for_each(|byte| print!("{byte:#} "));
         println!();
-        dbg!(&self.constant_pool);
+        //dbg!(&self.ast.filter_scoped_declaration(1, 2, 2));
+        //dbg!(&self.constant_pool);
 
         Self {
             ast: self.ast,
             bytecode: self.bytecode,
             constant_pool: self.constant_pool,
             local_names: vec![],
-            local_count: 0,
+            previous_scope_count: 0,
             scope_level: 0,
         }
     }
@@ -100,11 +101,13 @@ impl<'a> Compiler<'a> {
                     self.bytecode.push(low);
                 } else {
                     self.local_names.push(name.to_string());
-                    self.local_count += 1;
                     if let Some(node_id) = expression {
                         self.compile_node(node_id)?;
-                        self.bytecode.push(SET_LOCAL);
-                        self.bytecode.push(self.scope_level + self.local_count);
+                        self.bytecode.push(DECLARE_LOCAL);
+                        self.bytecode.push(1);
+                    } else {
+                        self.bytecode.push(DECLARE_LOCAL);
+                        self.bytecode.push(0);
                     }
                 }
             }
@@ -140,12 +143,25 @@ impl<'a> Compiler<'a> {
             Statement::Block { start, length } => {
                 if let Some(start) = start {
                     self.scope_level += 1;
-                    let mut node_index = *start;
-                    while node_index < *length + 1 {
-                        self.compile_node(&node_index)?;
-                        node_index += 1;
+                    self.previous_scope_count = self.local_names.len() as u8;
+                    let prev = self.previous_scope_count;
+                    for node_id in self
+                        .ast
+                        .filter_scoped_declaration(*start, *length, self.scope_level)
+                        .iter()
+                    {
+                        self.compile_node(node_id)?;
                     }
-                    self.bytecode.push(DROP);
+                    self.previous_scope_count = prev;
+                    (prev != self.local_names.len() as u8).then(|| {
+                        self.bytecode.push(DROP);
+                        self.bytecode.push(
+                            (self.previous_scope_count as usize..self.local_names.len()).count()
+                                as u8,
+                        );
+                        self.local_names
+                            .drain(self.previous_scope_count as usize..self.local_names.len());
+                    });
                     self.scope_level -= 1;
                     return Ok(());
                 } else {
@@ -237,39 +253,39 @@ impl<'a> Compiler<'a> {
 
     fn find_var(&mut self, name: &str) -> Result<(usize, bool)> {
         let scope_level = self.scope_level as usize;
-        let local_count = self.local_count as usize;
-        let mut index = 0;
+        let local_count = self.local_names.len();
         let mut is_local = true;
-        let mut requires_upvalue = true;
 
         (scope_level == 0).then(|| is_local = false);
 
         if is_local {
-            let scope_range = &self.local_names[scope_level..scope_level + local_count];
-            for (idx, var_name) in scope_range.iter().enumerate() {
-                (var_name == name).then(|| {
-                    index = scope_level + idx;
-                    requires_upvalue = false;
-                });
+            let scope_range = &self.local_names[self.previous_scope_count as usize..local_count];
+            for (idx, var_name) in scope_range.iter().enumerate().rev() {
+                if var_name == name {
+                    return Ok((scope_level + idx, true));
+                }
             }
-        } else if requires_upvalue {
-            let scope_range = &self.local_names[..scope_level];
-            for (idx, var_name) in scope_range.iter().enumerate() {
-                (var_name == name).then(|| index = idx);
+
+            let scope_range = &self.local_names[..self.previous_scope_count as usize];
+            for (idx, var_name) in scope_range.iter().enumerate().rev() {
+                if var_name == name {
+                    return Ok((idx, true));
+                }
             }
-        } else {
-            index = self
-                .constant_pool
-                .iter()
-                .position(|val| {
-                    if let Value::Utf8(var_name) = val {
-                        var_name == name
-                    } else {
-                        false
-                    }
-                })
-                .ok_or(Error::PlaceholderError)?;
         }
+
+        let index = self
+            .constant_pool
+            .iter()
+            .position(|val| {
+                if let Value::Utf8(var_name) = val {
+                    is_local = false;
+                    var_name == name
+                } else {
+                    false
+                }
+            })
+            .ok_or(Error::PlaceholderError)?;
 
         Ok((index, is_local))
     }

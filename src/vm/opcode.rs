@@ -3,19 +3,20 @@
 pub type Bytecode = Vec<u8>;
 
 pub const LOAD_CONST    : u8 = 0; // Takes u16 as args which is the index of constant in the constant pool.
-pub const DECLARE_GLOBAL: u8 = 1;// Takes u16 as args which is the index of utf-8 in the constant pool.
+pub const DECLARE_GLOBAL: u8 = 1; // Takes u16 as args which is the index of utf-8 in the constant pool.
 pub const LOAD_GLOBAL   : u8 = 2;
 pub const SET_GLOBAL    : u8 = 3;
-pub const LOAD_LOCAL    : u8 = 4;
-pub const SET_LOCAL     : u8 = 5;
-pub const ADD           : u8 = 6;
-pub const SUB           : u8 = 7;
-pub const MUL           : u8 = 8;
-pub const DIV           : u8 = 9;
-pub const NEG           : u8 = 10;
-pub const NOT           : u8 = 11;
-pub const CMP_LESS      : u8 = 12;  // Requires u8 arg. 0x00 for < only and 0x01 for <=
-pub const CMP_GREATER   : u8 = 13;  // Requires u8 arg. 0x00 for > only and 0x01 for >=
-pub const CMP_EQ        : u8 = 14;
-pub const DROP          : u8 = 15;
-pub const PRINT         : u8 = 16;
+pub const DECLARE_LOCAL : u8 = 4; // Takes u8 as args. 0 if its just declaration, 1 if it has an initial expression.
+pub const LOAD_LOCAL    : u8 = 5; // Takes u8 as args which is the index in local
+pub const SET_LOCAL     : u8 = 6; // Takes u8 as args which is the index in local
+pub const ADD           : u8 = 7;
+pub const SUB           : u8 = 8;
+pub const MUL           : u8 = 9;
+pub const DIV           : u8 = 10;
+pub const NEG           : u8 = 11;
+pub const NOT           : u8 = 12;
+pub const CMP_LESS      : u8 = 13; // Requires u8 arg. 0x00 for < only and 0x01 for <=
+pub const CMP_GREATER   : u8 = 14; // Requires u8 arg. 0x00 for > only and 0x01 for >=
+pub const CMP_EQ        : u8 = 15;
+pub const DROP          : u8 = 16; // Takes u8 as args which is the number of elements to be popped from local
+pub const PRINT         : u8 = 17;
