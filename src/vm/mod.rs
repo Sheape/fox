@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::Error;
 use crate::vm::opcode::*;
+use crate::Error;
 
 mod compiler;
 mod opcode;
@@ -99,6 +99,18 @@ impl VM {
                 }
                 NOT => {
                     let result = !self.pop_stack();
+                    self.stack.push(result);
+                }
+                AND => {
+                    let second_operand = self.pop_stack();
+                    let first_operand = self.pop_stack();
+                    let result = first_operand & second_operand;
+                    self.stack.push(result);
+                }
+                OR => {
+                    let second_operand = self.pop_stack();
+                    let first_operand = self.pop_stack();
+                    let result = first_operand | second_operand;
                     self.stack.push(result);
                 }
                 CMP_GREATER => {

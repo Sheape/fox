@@ -15,10 +15,12 @@ pub const MUL           : u8 = 9;
 pub const DIV           : u8 = 10;
 pub const NEG           : u8 = 11;
 pub const NOT           : u8 = 12;
-pub const CMP_LESS      : u8 = 13; // Requires u8 arg. 0x00 for < only and 0x01 for <=
-pub const CMP_GREATER   : u8 = 14; // Requires u8 arg. 0x00 for > only and 0x01 for >=
-pub const CMP_EQ        : u8 = 15;
-pub const DROP          : u8 = 16; // Takes u8 as args which is the number of elements to be popped from local
-pub const PRINT         : u8 = 17;
-pub const JMP_IF_FALSE  : u8 = 18;
-pub const JMP           : u8 = 19;
+pub const AND           : u8 = 13;
+pub const OR            : u8 = 14;
+pub const CMP_LESS      : u8 = 15;  // Requires u8 arg. 0x00 for < only and 0x01 for <=
+pub const CMP_GREATER   : u8 = 16;  // Requires u8 arg. 0x00 for > only and 0x01 for >=
+pub const CMP_EQ        : u8 = 17;
+pub const DROP          : u8 = 18;  // Takes u8 as args which is the number of elements to be popped from local
+pub const PRINT         : u8 = 19;
+pub const JMP_IF_FALSE  : u8 = 20;
+pub const JMP           : u8 = 21;

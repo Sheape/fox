@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    ops::{Add, Div, Mul, Neg, Not, Sub},
+    ops::{Add, BitAnd, BitOr, Div, Mul, Neg, Not, Sub},
 };
 
 use crate::{
@@ -236,6 +236,8 @@ impl<'a> Compiler<'a> {
                         self.bytecode.push(NOT);
                         Ok(())
                     }
+                    TokenType::AND => Ok(self.bytecode.push(AND)),
+                    TokenType::OR => Ok(self.bytecode.push(OR)),
                     _ => Err(Error::PlaceholderError), // TODO: Put proper error types here
                 }
             }
@@ -480,4 +482,43 @@ impl Neg for Value {
         }
     }
 }
-// endregion
+
+impl BitOr for Value {
+    type Output = Value;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::String(str), _) => Value::String(str),
+            (_, Value::String(str)) => Value::String(str),
+            (Value::Float(float), _) => Value::Float(float),
+            (_, Value::Float(float)) => Value::Float(float),
+            (Value::Integer(int), _) => Value::Integer(int),
+            (_, Value::Integer(int)) => Value::Integer(int),
+            (Value::Boolean(bool1), Value::Boolean(bool2)) => Value::Boolean(bool1 || bool2),
+            (Value::Boolean(bool), Value::Nil) => Value::Boolean(bool),
+            (Value::Nil, Value::Boolean(bool)) => Value::Boolean(bool),
+            (Value::Nil, Value::Nil) => todo!(),
+            _ => todo!(),
+        }
+    }
+}
+
+impl BitAnd for Value {
+    type Output = Value;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Boolean(bool), other) | (other, Value::Boolean(bool)) => {
+                if bool {
+                    other
+                } else {
+                    Value::Boolean(false)
+                }
+            }
+            (Value::Nil, _) => Value::Boolean(false),
+            (_, Value::Nil) => Value::Boolean(false),
+            (first, _) => first,
+            _ => Value::Boolean(false),
+        }
+    }
+}
