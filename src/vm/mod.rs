@@ -210,6 +210,12 @@ impl VM {
                     let jmp_offset = self.next_u2();
                     self.ip -= jmp_offset as usize;
                 }
+                JMP_UP_IF_TRUE => {
+                    let jmp_offset = self.next_u2();
+                    if self.pop_stack() == Value::Boolean(true) {
+                        self.ip -= jmp_offset as usize;
+                    }
+                }
                 _ => (),
             }
         }

@@ -54,7 +54,7 @@ impl<'a> Compiler<'a> {
             .map(|node_id| self.compile_node(node_id))
             .collect();
         println!("\nBytecode instructions:");
-        self.bytecode.iter().for_each(|byte| print!("{byte:#} "));
+        self.bytecode.iter().for_each(|byte| print!("{byte:#x} "));
         println!();
         //dbg!(&self.ast.filter_scoped_declaration(1, 2, 2));
         //dbg!(&self.constant_pool);
@@ -183,7 +183,32 @@ impl<'a> Compiler<'a> {
                 condition,
                 after_expr,
                 statement,
-            } => todo!(),
+            } => {
+                // initial
+                if let Some(initial_idx) = initial {
+                    self.compile_node(initial_idx)?;
+                }
+
+                // statement body
+                let statement_idx = self.bytecode.len();
+                self.compile_node(statement)?;
+
+                // after expr
+                if let Some(after_expr_idx) = after_expr {
+                    self.compile_node(after_expr_idx)?;
+                }
+
+                if let Some(condition_idx) = condition {
+                    self.compile_node(condition_idx)?;
+                    self.bytecode.push(JMP_UP_IF_TRUE);
+                } else {
+                    self.bytecode.push(JMP_UP);
+                }
+
+                let (high, low) = u16_to_u8((self.bytecode.len() - statement_idx + 2) as u16);
+                self.bytecode.push(high);
+                self.bytecode.push(low);
+            }
             Statement::Block { start, length } => {
                 if let Some(start) = start {
                     self.scope_level += 1;
