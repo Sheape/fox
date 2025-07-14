@@ -1,6 +1,6 @@
 [package]
 name = "fox"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Sheape <sheape@outlook.ph>"]
 description = "Fast interpreter for the Lox programming language."
 repository = "https://github.com/Sheape/fox"
