@@ -1,11 +1,11 @@
 [package]
 name = "fox"
 version = "0.1.0"
-authors = ["Sheape <paulgeraldpare@gmail.com>"]
+authors = ["Sheape <sheape@outlook.ph>"]
 description = "Fast interpreter for the Lox programming language."
 repository = "https://github.com/Sheape/fox"
 edition = "2024"
-rust-version = "1.86"
+rust-version = "1.88"
 
 [dependencies]
 anyhow = "1.0.68"                                # error handling
