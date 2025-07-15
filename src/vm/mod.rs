@@ -17,7 +17,6 @@ pub struct VM {
     constant_pool: Vec<Value>,
     bytecode: Bytecode,
     ip: usize,
-    local_count: u8,
 }
 
 impl VM {
@@ -29,7 +28,6 @@ impl VM {
             constant_pool,
             bytecode,
             ip: 0,
-            local_count: 0,
         }
     }
 
@@ -54,12 +52,6 @@ impl VM {
 
     fn pop_stack(&mut self) -> Value {
         self.stack.pop().unwrap()
-    }
-
-    fn pop_local_stack(&mut self) -> Value {
-        let value = self.local.pop().unwrap();
-        self.local_count = self.local.len() as u8;
-        value
     }
 
     pub fn execute(&mut self) {

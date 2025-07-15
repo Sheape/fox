@@ -21,8 +21,8 @@ pub enum Value {
     Nil,
 }
 
-pub struct Compiler<'a> {
-    pub ast: AST<'a>,
+pub struct Compiler {
+    pub ast: AST,
     pub bytecode: Bytecode,
     pub constant_pool: Vec<Value>,
     local_names: Vec<String>,
@@ -35,8 +35,8 @@ fn u16_to_u8(index: u16) -> (u8, u8) {
     (bytes[0], bytes[1])
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(ast: AST<'a>) -> Self {
+impl Compiler {
+    pub fn new(ast: AST) -> Self {
         Self {
             ast,
             bytecode: vec![],
@@ -84,7 +84,11 @@ impl<'a> Compiler<'a> {
                 inherited_class,
                 methods,
             } => todo!(),
-            Declaration::Function(function) => todo!(),
+            Declaration::Function {
+                name,
+                parameters,
+                body,
+            } => todo!(),
             Declaration::Variable { name, expression } => {
                 if self.scope_level == 0 {
                     self.constant_pool.push(Value::Utf8(name.to_string()));
@@ -300,6 +304,7 @@ impl<'a> Compiler<'a> {
             ExprNodeType::Call => todo!(),
             ExprNodeType::Property => todo!(),
             ExprNodeType::Arguments => todo!(),
+            ExprNodeType::Parameters => todo!(),
             ExprNodeType::Assignment => {
                 if let TokenType::IDENTIFIER(ident_name) = &expression.main_token.token_type {
                     let ident_metadata = self.find_var(ident_name)?;

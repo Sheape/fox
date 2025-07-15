@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 
-use crate::function::Function;
 use crate::lexer::{Lexer, Token};
 use crate::parser::{ASTNodeRef, Expression, NodeId, Parser, Statement};
 use crate::vm::{Compiler, VM};
@@ -20,8 +19,8 @@ pub struct Compiled;
 pub struct Program<'a, State = None> {
     tokens: Vec<Token>,
     line_offsets: Vec<usize>,
-    ast: AST<'a>,
-    declarations: Vec<Declaration<'a>>,
+    ast: AST,
+    declarations: Vec<Declaration>,
     input: &'a [u8],
     _state: PhantomData<State>,
 }
@@ -29,26 +28,30 @@ pub struct Program<'a, State = None> {
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
-pub struct AST<'a> {
-    pub nodes: Vec<ASTNode<'a>>,
+pub struct AST {
+    pub nodes: Vec<ASTNode>,
     pub mem_arena: Vec<ASTNodeRef>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ASTNode<'a> {
-    Declaration(Declaration<'a>),
+pub enum ASTNode {
+    Declaration(Declaration),
     Statement(Statement),
     Expression(Expression),
 }
 
 #[derive(Debug, Clone)]
-pub enum Declaration<'a> {
+pub enum Declaration {
     Class {
-        name: &'a Token,
-        inherited_class: Option<&'a Token>,
-        methods: Vec<&'a Function<'a>>,
+        name: String,
+        inherited_class: Option<String>,
+        methods: NodeId,
     },
-    Function(&'a Function<'a>),
+    Function {
+        name: String,
+        parameters: Option<NodeId>,
+        body: NodeId,
+    },
     Variable {
         name: String,
         expression: Option<NodeId>,
@@ -88,9 +91,9 @@ impl<'a> Program<'a, None> {
 impl<'a> Program<'a, Lexed> {
     pub fn parse(self) -> Program<'a, Parsed> {
         let parser = Parser::new(self.tokens).parse();
-        dbg!(&parser.ast);
+        //dbg!(&parser.ast);
         //dbg!(&parser.errors);
-        dbg!(&parser.mem_arena);
+        //dbg!(&parser.mem_arena);
         //dbg!(&parser.root_nodes);
         //dbg!(&parser.ast[11]);
         //let _ = &parser.mem_arena.iter().for_each(|index| {
