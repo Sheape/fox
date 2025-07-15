@@ -7,8 +7,8 @@ use crate::{program::ASTNode, Error};
 use std::fmt::{Debug, Display};
 
 #[derive(Debug)]
-pub struct Parser<'a> {
-    pub ast: Vec<ASTNode<'a>>,
+pub struct Parser {
+    pub ast: Vec<ASTNode>,
     pub mem_arena: Vec<ASTNodeRef>,
     pub errors: Vec<Error>,
     pub tokens: Vec<Token>,
@@ -67,6 +67,7 @@ pub enum ExprNodeType {
     Literal,
     Call,
     Property,
+    Parameters,
     Arguments,
     Assignment,
 }
@@ -75,11 +76,12 @@ pub enum ExprNodeType {
 pub enum ASTNodeRef {
     ScopedDeclaration { reference: usize, depth: u8 },
     MethodArgs(usize),
+    FunctionParams(usize),
 }
 
 pub type NodeId = usize;
 
-impl<'a> Parser<'a> {
+impl Parser {
     // region: Utility methods
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -115,7 +117,7 @@ impl<'a> Parser<'a> {
     // endregion
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     // region: Main parsing methods
     pub fn parse(mut self) -> Self {
         while let Some(current_token_type) = self.get_token_type() {
@@ -141,6 +143,15 @@ impl<'a> Parser<'a> {
             Some(TokenType::VAR) => self
                 .parse_var_declaration()
                 .map(|(name, expression)| Declaration::Variable { name, expression }),
+            Some(TokenType::FUN) => {
+                self.read_token(); // reads "fun"
+                self.parse_function_declaration()
+                    .map(|(name, parameters, body)| Declaration::Function {
+                        name,
+                        parameters,
+                        body,
+                    })
+            }
             _ => self.parse_statement().map(Declaration::Statement),
         }
         .map(ASTNode::Declaration);
@@ -158,6 +169,33 @@ impl<'a> Parser<'a> {
         });
 
         Ok(self.ast.len() - 1)
+    }
+
+    fn parse_function_declaration(&mut self) -> Result<(String, Option<NodeId>, NodeId)> {
+        if let Some(TokenType::IDENTIFIER(function_name)) = self.get_token_type() {
+            self.read_token(); // reads function_name
+            if let Some(TokenType::LEFT_PAREN) = self.get_token_type() {
+                self.read_token(); // reads '('
+                let parameter_node_id = if let Some(TokenType::RIGHT_PAREN) = self.get_token_type()
+                {
+                    None
+                } else {
+                    Some(self.parse_parameters()?)
+                };
+
+                if let Some(TokenType::RIGHT_PAREN) = self.get_token_type() {
+                    self.read_token(); // reads ')'
+                    let block_statement = self.parse_statement()?; // reads block
+                    Ok((function_name, parameter_node_id, block_statement))
+                } else {
+                    Err(Error::PlaceholderError)
+                }
+            } else {
+                Err(Error::PlaceholderError)
+            }
+        } else {
+            Err(Error::PlaceholderError)
+        }
     }
 
     fn parse_var_declaration(&mut self) -> Result<(String, Option<NodeId>)> {
@@ -356,7 +394,7 @@ impl<'a> Parser<'a> {
     // endregion
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     // region: Recursive descent parsing for expr
     fn parse_expr(&mut self) -> Result<NodeId> {
         match self.get_token() {
@@ -593,6 +631,30 @@ impl<'a> Parser<'a> {
         Ok(primary)
     }
 
+    fn parse_parameters(&mut self) -> Result<NodeId> {
+        let first_parameter = self.get_token().unwrap();
+        let mut length = 1usize;
+        let ident = self.parse_primary()?;
+        self.mem_arena.push(ASTNodeRef::FunctionParams(ident));
+        let start = self.mem_arena.len() - 1;
+
+        while self.get_token_type() == Some(TokenType::COMMA) {
+            self.read_token(); // reads ','
+            let ident = self.parse_primary()?;
+            self.mem_arena.push(ASTNodeRef::FunctionParams(ident));
+            length += 1;
+        }
+
+        self.ast.push(ASTNode::Expression(Expression {
+            node_type: ExprNodeType::Parameters,
+            main_token: first_parameter,
+            lhs: Some(start),
+            rhs: Some(length),
+        }));
+
+        Ok(self.ast.len() - 1)
+    }
+
     fn parse_arguments(&mut self) -> Result<NodeId> {
         let first_arg = self.get_token().unwrap();
         let expr_node = self.parse_expr()?;
@@ -689,7 +751,7 @@ impl<'a> Parser<'a> {
 //    }
 //}
 
-impl<'a> AST<'a> {
+impl AST {
     pub fn filter_root_nodes(&self) -> Vec<usize> {
         self.mem_arena
             .iter()
@@ -731,7 +793,7 @@ impl<'a> AST<'a> {
     }
 
     // We implement our own display method instead of impl Display because we still need access to AST.
-    fn display(&self, node: &ASTNode<'a>, mem_arena: &[ASTNodeRef]) -> String {
+    fn display(&self, node: &ASTNode, mem_arena: &[ASTNodeRef]) -> String {
         match node {
             ASTNode::Declaration(declaration) => match declaration {
                 Declaration::Class {
@@ -739,7 +801,18 @@ impl<'a> AST<'a> {
                     inherited_class,
                     methods,
                 } => todo!(),
-                Declaration::Function(function) => todo!(),
+                Declaration::Function {
+                    name,
+                    parameters,
+                    body,
+                } => match parameters {
+                    Some(param_id) => format!(
+                        "(function {name} {} {})",
+                        self.goto_node(param_id),
+                        self.goto_node(body)
+                    ),
+                    None => format!("(function {name} {})", self.goto_node(body)),
+                },
                 Declaration::Variable { name, expression } => match expression {
                     Some(expr) => format!("(var {name} {})", self.goto_node(expr)),
                     None => format!("(var {name})"),
@@ -886,6 +959,21 @@ impl<'a> AST<'a> {
                     args.push(')');
                     args
                 }
+                ExprNodeType::Parameters => {
+                    let mut params = String::from("(params");
+                    let start = expression.lhs.unwrap();
+                    let length = expression.rhs.unwrap();
+                    // Guaranteed to have start_idx
+                    for idx in &mem_arena[start..start + length] {
+                        let ASTNodeRef::FunctionParams(idx) = idx else {
+                            panic!("Invalid Function params!!");
+                        };
+                        params.push(' ');
+                        params.push_str(self.goto_node(idx).as_str());
+                    }
+                    params.push(')');
+                    params
+                }
                 ExprNodeType::Assignment => format!(
                     "(assignment {} {})",
                     self.goto_node(&expression.lhs.unwrap()),
@@ -896,7 +984,7 @@ impl<'a> AST<'a> {
     }
 }
 
-impl Display for AST<'_> {
+impl Display for AST {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parsed = self
             .filter_root_nodes()
