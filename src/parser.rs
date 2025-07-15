@@ -79,6 +79,13 @@ pub enum ASTNodeRef {
     FunctionParams(usize),
 }
 
+#[derive(Debug)]
+pub enum BlockType {
+    Local,
+    Function,
+    Class,
+}
+
 pub type NodeId = usize;
 
 impl Parser {
@@ -143,6 +150,14 @@ impl Parser {
             Some(TokenType::VAR) => self
                 .parse_var_declaration()
                 .map(|(name, expression)| Declaration::Variable { name, expression }),
+            Some(TokenType::CLASS) => {
+                self.parse_class_declaration()
+                    .map(|(name, inherited_class, methods)| Declaration::Class {
+                        name,
+                        inherited_class,
+                        methods,
+                    })
+            }
             Some(TokenType::FUN) => {
                 self.read_token(); // reads "fun"
                 self.parse_function_declaration()
@@ -169,6 +184,36 @@ impl Parser {
         });
 
         Ok(self.ast.len() - 1)
+    }
+
+    fn parse_class_declaration(&mut self) -> Result<(String, Option<String>, NodeId)> {
+        self.read_token(); // reads "class"
+        if let Some(TokenType::IDENTIFIER(class_name)) = self.get_token_type() {
+            self.read_token(); // reads class_name
+            let inherited_class_name = match self.get_token_type() {
+                Some(TokenType::LESS) => {
+                    self.read_token(); // reads '<'
+                    if let Some(TokenType::IDENTIFIER(cls_name)) = self.get_token_type() {
+                        self.read_token(); // reads inherited_class_name
+                        Ok(Some(cls_name))
+                    } else {
+                        Err(Error::PlaceholderError)
+                    }
+                }
+                Some(TokenType::LEFT_BRACE) => Ok(None),
+                _ => Err(Error::PlaceholderError),
+            }?;
+
+            if self.get_token_type() == Some(TokenType::LEFT_BRACE) {
+                let methods_node = self.parse_statement()?;
+
+                Ok((class_name, inherited_class_name, methods_node))
+            } else {
+                Err(Error::PlaceholderError)
+            }
+        } else {
+            Err(Error::PlaceholderError)
+        }
     }
 
     fn parse_function_declaration(&mut self) -> Result<(String, Option<NodeId>, NodeId)> {
@@ -800,7 +845,13 @@ impl AST {
                     name,
                     inherited_class,
                     methods,
-                } => todo!(),
+                } => match inherited_class {
+                    Some(inherited_cls_name) => format!(
+                        "(class {name} (inherited {inherited_cls_name}) ([methods {}]))",
+                        self.goto_node(methods)
+                    ),
+                    None => format!("(class {name} ([methods {}]))", self.goto_node(methods)),
+                },
                 Declaration::Function {
                     name,
                     parameters,
