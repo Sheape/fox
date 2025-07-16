@@ -4,6 +4,7 @@ use crate::vm::opcode::*;
 use crate::Error;
 
 mod compiler;
+mod disassembler;
 mod opcode;
 
 pub use compiler::Compiler;
