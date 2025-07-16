@@ -45,37 +45,37 @@ impl Disassembler {
                 LOAD_CONST => {
                     let const_pool = self.retrieve_from_const_pool();
                     format!(
-                        "LOAD_CONST {} {}    --> {}",
-                        const_pool.0, const_pool.1, const_pool.2
+                        "{:<14} {:<2} {:<2}         // \"{}\"",
+                        "LOAD_CONST", const_pool.0, const_pool.1, const_pool.2
                     )
                 }
                 DECLARE_GLOBAL => {
                     let const_pool = self.retrieve_from_const_pool();
                     format!(
-                        "DECLARE_GLOBAL {} {}   --> {}",
-                        const_pool.0, const_pool.1, const_pool.2
+                        "{:<14} {:<2} {:<2}         // \"{}\"",
+                        "DECLARE_GLOBAL", const_pool.0, const_pool.1, const_pool.2
                     )
                 }
                 LOAD_GLOBAL => {
                     let const_pool = self.retrieve_from_const_pool();
                     format!(
-                        "LOAD_GLOBAL {} {}   --> \"{}\"",
-                        const_pool.0, const_pool.1, const_pool.2
+                        "{:<14} {:<2} {:<2}         // \"{}\"",
+                        "LOAD_GLOBAL", const_pool.0, const_pool.1, const_pool.2
                     )
                 }
                 SET_GLOBAL => {
                     let const_pool = self.retrieve_from_const_pool();
                     format!(
-                        "SET_GLOBAL {} {}   --> \"{}\"",
-                        const_pool.0, const_pool.1, const_pool.2
+                        "{:<14} {:<2} {:<2}         // \"{}\"",
+                        "SET_GLOBAL", const_pool.0, const_pool.1, const_pool.2
                     )
                 }
                 DECLARE_LOCAL => match self.read_get_u1() {
-                    0 => "DECLARE_LOCAL uninitialized".to_owned(),
-                    _ => "DECLARE_LOCAL initialized".to_owned(),
+                    0 => format!("{:<14}        // {}", "DECLARE_LOCAL", "uninitialized"),
+                    _ => format!("{:<14}        // {}", "DECLARE_LOCAL", "initialized"),
                 },
-                LOAD_LOCAL => format!("LOAD_LOCAL {}", self.read_get_u1()),
-                SET_LOCAL => format!("SET_LOCAL {}", self.read_get_u1()),
+                LOAD_LOCAL => format!("{:<14} {:<2}", "LOAD_LOCAL", self.read_get_u1()),
+                SET_LOCAL => format!("{:<14} {:<2}", "SET_LOCAL", self.read_get_u1()),
                 ADD => "ADD".to_owned(),
                 SUB => "SUB".to_owned(),
                 MUL => "MUL".to_owned(),
@@ -85,21 +85,33 @@ impl Disassembler {
                 AND => "AND".to_owned(),
                 OR => "OR".to_owned(),
                 CMP_LESS => match self.read_get_u1() {
-                    0 => "CMP_LESS <".to_owned(),
-                    _ => "CMP_LESS <=".to_owned(),
+                    0 => "CMP_LESS       <".to_owned(),
+                    _ => "CMP_LESS       <=".to_owned(),
                 },
                 CMP_GREATER => match self.read_get_u1() {
-                    0 => "CMP_GREATER >".to_owned(),
-                    _ => "CMP_GREATER >=".to_owned(),
+                    0 => "CMP_GREATER    >".to_owned(),
+                    _ => "CMP_GREATER    >=".to_owned(),
                 },
                 CMP_EQ => "CMP_EQ".to_owned(),
                 DROP => format!("DROP {}", self.read_get_u1()),
                 PRINT => "PRINT".to_owned(),
-                JMP_IF_FALSE => format!("JMP_IF_FALSE {}", self.ip + self.read_get_u1() as usize),
-                JMP => format!("JMP {}", self.ip + self.read_get_u2() as usize),
-                JMP_UP => format!("JMP_UP {}", self.ip as i32 - self.read_get_u2() as i32),
+                JMP_IF_FALSE => format!(
+                    "{:<14} {:<2}",
+                    "JMP_IF_FALSE",
+                    self.ip + self.read_get_u2() as usize
+                ),
+                JMP => format!("{:<14} {}", "JMP", self.ip + self.read_get_u2() as usize),
+                JMP_UP => format!(
+                    "{:<14} {}",
+                    "JMP_UP",
+                    self.ip as i32 - self.read_get_u2() as i32
+                ),
                 JMP_UP_IF_TRUE => {
-                    format!("JMP_UP_IF_TRUE {}", self.ip - self.read_get_u2() as usize)
+                    format!(
+                        "{:<14} {}",
+                        "JMP_UP_IF_TRUE",
+                        self.ip - self.read_get_u2() as usize
+                    )
                 }
                 _ => String::from(""),
             };
