@@ -132,7 +132,11 @@ impl VM {
                     let result = self.pop_stack() == self.pop_stack();
                     self.stack.push(Value::Boolean(result));
                 }
-                PRINT => println!("{}", self.stack.last().unwrap()),
+                PRINT => {
+                    dbg!(&self.constant_pool);
+                    dbg!(&self.local);
+                    println!("{}", self.stack.last().unwrap());
+                }
                 DECLARE_GLOBAL => {
                     let index = self.next_u2();
                     if let Value::Utf8(name) = &self.constant_pool[index as usize] {
@@ -181,6 +185,9 @@ impl VM {
                 }
                 LOAD_LOCAL => {
                     let index = self.next_u1();
+                    dbg!(&self.local);
+                    println!("Index is: {index}");
+                    dbg!(&self.stack);
                     let value = &self.local[index as usize];
                     self.stack.push(value.clone());
                 }

@@ -5,9 +5,9 @@ use std::{
 
 use crate::{
     lexer::{Token, TokenType},
-    parser::{ExprNodeType, Expression, NodeId, Statement},
+    parser::{ASTNodeRef, ExprNodeType, Expression, NodeId, Statement},
     program::{ASTNode, Declaration, AST},
-    vm::{opcode::*, Bytecode},
+    vm::{disassembler::Disassembler, opcode::*, Bytecode},
     Error, Result,
 };
 
@@ -26,6 +26,7 @@ pub struct Compiler {
     pub bytecode: Bytecode,
     pub constant_pool: Vec<Value>,
     local_names: Vec<String>,
+    ip: usize,
     previous_scope_count: u8,
     scope_level: u8,
 }
@@ -42,6 +43,7 @@ impl Compiler {
             bytecode: vec![],
             constant_pool: vec![],
             local_names: vec![],
+            ip: 0,
             previous_scope_count: 0,
             scope_level: 0,
         }
@@ -54,16 +56,18 @@ impl Compiler {
             .map(|node_id| self.compile_node(node_id))
             .collect();
         println!("\nBytecode instructions:");
-        self.bytecode.iter().for_each(|byte| print!("{byte:#x} "));
-        println!();
+        Disassembler::new(self.bytecode.clone(), self.constant_pool.clone()).disassemble();
+        //self.bytecode.iter().for_each(|byte| print!("{byte:#x} "));
         //dbg!(&self.ast.filter_scoped_declaration(1, 2, 2));
         //dbg!(&self.constant_pool);
+        //dbg!(&self.local_names);
 
         Self {
             ast: self.ast,
             bytecode: self.bytecode,
             constant_pool: self.constant_pool,
             local_names: vec![],
+            ip: 0,
             previous_scope_count: 0,
             scope_level: 0,
         }
@@ -88,7 +92,26 @@ impl Compiler {
                 name,
                 parameters,
                 body,
-            } => todo!(),
+            } => {
+                self.bytecode.push(JMP);
+                let function_index = self.bytecode.len();
+                self.bytecode.push(0);
+                self.bytecode.push(0);
+                self.local_names
+                    .push(format!("fun:{name}:{function_index}"));
+                if let Some(param_node_id) = parameters {
+                    self.compile_node(param_node_id)?;
+                }
+                self.compile_node(body)?;
+                self.bytecode.push(JMP);
+                let (high, low) = u16_to_u8((self.bytecode.len() - self.ip + 2) as u16);
+                self.bytecode.push(high);
+                self.bytecode.push(low);
+
+                let (high, low) = u16_to_u8((self.bytecode.len() - function_index - 2) as u16);
+                self.bytecode[function_index] = high;
+                self.bytecode[function_index + 1] = low;
+            }
             Declaration::Variable { name, expression } => {
                 if self.scope_level == 0 {
                     self.constant_pool.push(Value::Utf8(name.to_string()));
@@ -301,10 +324,70 @@ impl Compiler {
                 self.compile_literal(expression.main_token.clone())?;
                 Ok(())
             }
-            ExprNodeType::Call => todo!(),
+            ExprNodeType::Call => {
+                self.ip = self.bytecode.len();
+                let ident_node = expression.lhs.unwrap();
+                let arguments_node = expression.rhs.unwrap();
+                self.compile_node(&arguments_node)?;
+
+                if let ASTNode::Expression(Expression {
+                    node_type: _,
+                    main_token: identifier,
+                    lhs: _,
+                    rhs: _,
+                }) = self.ast.nodes[ident_node].clone()
+                    && let TokenType::IDENTIFIER(identifier_name) = identifier.token_type
+                {
+                    println!("Calling: {identifier_name}");
+                    let (index, is_local) = self.find_function(&identifier_name)?;
+                    self.bytecode.push(JMP_UP);
+                    let (high, low) = u16_to_u8((self.bytecode.len() - 2 - index) as u16);
+                    self.bytecode.push(high);
+                    self.bytecode.push(low);
+                } else {
+                    return Err(Error::PlaceholderError);
+                }
+                Ok(())
+            }
             ExprNodeType::Property => todo!(),
-            ExprNodeType::Arguments => todo!(),
-            ExprNodeType::Parameters => todo!(),
+            ExprNodeType::Arguments => {
+                let start = &expression.lhs.unwrap();
+                let length = &expression.lhs.unwrap();
+                for node_id in self.ast.filter_method_arguments(*start, *length).iter() {
+                    self.compile_node(node_id)?;
+                }
+                Ok(())
+            }
+            ExprNodeType::Parameters => {
+                let TokenType::IDENTIFIER(func_name) = &expression.main_token.token_type else {
+                    panic!("Expected identifier")
+                };
+                let start = expression.lhs.unwrap();
+                let length = expression.rhs.unwrap();
+                for node_id in self.ast.filter_function_parameters(start, length) {
+                    if let ASTNode::Expression(Expression {
+                        node_type: _,
+                        main_token,
+                        lhs: _,
+                        rhs: _,
+                    }) = &self.ast.nodes[node_id]
+                    {
+                        let TokenType::IDENTIFIER(param_name) = main_token.token_type.clone()
+                        else {
+                            panic!("Expected identifier")
+                        };
+                        //self.local_names
+                        //    .push(format!("fun_param:{func_name}:{param_name}"));
+                        self.local_names.push(param_name);
+                        self.bytecode.push(DECLARE_LOCAL);
+                        self.bytecode.push(1);
+                    } else {
+                        return Err(Error::PlaceholderError);
+                    }
+                }
+
+                Ok(())
+            }
             ExprNodeType::Assignment => {
                 if let TokenType::IDENTIFIER(ident_name) = &expression.main_token.token_type {
                     let ident_metadata = self.find_var(ident_name)?;
@@ -338,7 +421,7 @@ impl Compiler {
             let scope_range = &self.local_names[self.previous_scope_count as usize..local_count];
             for (idx, var_name) in scope_range.iter().enumerate().rev() {
                 if var_name == name {
-                    return Ok((scope_level + idx - 1, true));
+                    return Ok((scope_level + idx, true));
                 }
             }
 
@@ -350,6 +433,57 @@ impl Compiler {
             }
         }
 
+        let index = self
+            .constant_pool
+            .iter()
+            .position(|val| {
+                if let Value::Utf8(var_name) = val {
+                    is_local = false;
+                    var_name == name
+                } else {
+                    false
+                }
+            })
+            .ok_or(Error::PlaceholderError)?;
+
+        Ok((index, is_local))
+    }
+
+    fn find_function(&mut self, name: &str) -> Result<(usize, bool)> {
+        let scope_level = self.scope_level as usize;
+        let local_count = self.local_names.len();
+        let mut is_local = true;
+
+        (scope_level == 0).then(|| is_local = false);
+
+        if is_local {
+            let scope_range = &self.local_names[self.previous_scope_count as usize..local_count];
+            let name_to_find = format!("fun:{name}:");
+            for var_name in scope_range.iter().rev() {
+                if var_name.starts_with(name_to_find.as_str()) {
+                    let index = var_name
+                        .strip_prefix(&name_to_find)
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap();
+                    return Ok((index, true));
+                }
+            }
+
+            let scope_range = &self.local_names[..self.previous_scope_count as usize];
+            for var_name in scope_range.iter().rev() {
+                if var_name.starts_with(name_to_find.as_str()) {
+                    let index = var_name
+                        .strip_prefix(&name_to_find)
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap();
+                    return Ok((index, true));
+                }
+            }
+        }
+
+        // TODO: Check for global function too
         let index = self
             .constant_pool
             .iter()
