@@ -218,6 +218,7 @@ impl Parser {
 
     fn parse_function_declaration(&mut self) -> Result<(String, Option<NodeId>, NodeId)> {
         if let Some(TokenType::IDENTIFIER(function_name)) = self.get_token_type() {
+            let function_token = self.get_token().unwrap();
             self.read_token(); // reads function_name
             if let Some(TokenType::LEFT_PAREN) = self.get_token_type() {
                 self.read_token(); // reads '('
@@ -225,7 +226,7 @@ impl Parser {
                 {
                     None
                 } else {
-                    Some(self.parse_parameters()?)
+                    Some(self.parse_parameters(function_token)?)
                 };
 
                 if let Some(TokenType::RIGHT_PAREN) = self.get_token_type() {
@@ -676,8 +677,7 @@ impl Parser {
         Ok(primary)
     }
 
-    fn parse_parameters(&mut self) -> Result<NodeId> {
-        let first_parameter = self.get_token().unwrap();
+    fn parse_parameters(&mut self, func: Token) -> Result<NodeId> {
         let mut length = 1usize;
         let ident = self.parse_primary()?;
         self.mem_arena.push(ASTNodeRef::FunctionParams(ident));
@@ -692,7 +692,7 @@ impl Parser {
 
         self.ast.push(ASTNode::Expression(Expression {
             node_type: ExprNodeType::Parameters,
-            main_token: first_parameter,
+            main_token: func,
             lhs: Some(start),
             rhs: Some(length),
         }));
@@ -822,6 +822,40 @@ impl AST {
             .filter_map(|node_ref| {
                 if let ASTNodeRef::ScopedDeclaration { reference, depth } = *node_ref
                     && depth == scope_level
+                    && count < length
+                {
+                    count += 1;
+                    Some(reference)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn filter_function_parameters(&self, start: usize, length: usize) -> Vec<usize> {
+        let mut count = 0usize;
+        self.mem_arena[start..]
+            .iter()
+            .filter_map(|node_ref| {
+                if let ASTNodeRef::FunctionParams(reference) = *node_ref
+                    && count < length
+                {
+                    count += 1;
+                    Some(reference)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn filter_method_arguments(&self, start: usize, length: usize) -> Vec<usize> {
+        let mut count = 0usize;
+        self.mem_arena[start..]
+            .iter()
+            .filter_map(|node_ref| {
+                if let ASTNodeRef::MethodArgs(reference) = *node_ref
                     && count < length
                 {
                     count += 1;
